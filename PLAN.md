@@ -10,8 +10,10 @@ This plan is written so that an agent with no other context can pick it up and c
 2. Work through the milestones **in order**. Each milestone lists tasks (checkboxes) and an **acceptance** block.
    Do not start a milestone before the previous one's acceptance passes.
 3. Tick the checkbox in this file in the same commit that completes the task.
-4. If the spec is ambiguous or contradicts itself: do **not** guess. Choose the stricter behaviour (raise a parse error),
-   and append an entry to the "Open questions" list at the end of this file with the spec section, the question and what you chose.
+4. If the spec is ambiguous or contradicts itself: do **not** guess or automatically choose a parse error. Record the exact conflict in
+   "Open questions", compare the relevant normative text and conformance vectors, and resolve it explicitly. Prefer the SPEC's
+   stated decisions and examples; make a spec correction in a separate commit if those conflict. Use a parse error only when the
+   specification requires rejection or no consistent interpretation is possible.
 5. Commit small and often, one task or tightly related group per commit, imperative subject line (`Parse ISO dates with wildcards`).
 6. Never change `SPEC.md` behaviour silently. Spec corrections are separate commits whose message starts with `spec:`.
 
@@ -22,7 +24,8 @@ This plan is written so that an agent with no other context can pick it up and c
   `datetime`, `zoneinfo`, `dateutil.relativedelta`. Only interval set algebra (lists of `(start, end)` instants) is custom.
 * On parse or semantic errors: message on stderr with file and line(s), try go on parsing to show other failing lines too, exit 2 at the end, **empty stdout**.
   Parse the whole config before printing normal output. Print errors as it goes.
-* Config lookup via XDG; create the default config when none is found (and no `--config` was given).
+* Config lookup via XDG; create the default config only when no config is found and no `--config` was given. A missing explicit
+  `--config PATH` is an error; never create that path.
 * May suggest other libs besides the spec's dependency list (stdlib, `python-dateutil`, `tzlocal`, system `tzdata`).
 
 ## 2. Repository layout (target)
@@ -59,15 +62,17 @@ Each milestone ends with a green `make test` and a commit.
 
 - [ ] XDG lookup: `--config`, `$XDG_CONFIG_HOME`, `$XDG_CONFIG_DIRS`; ignore relative XDG paths; `--config -` reads stdin.
 - [ ] Create the default file when nothing found and no `--config` given (dir 0700 if created, file 0644); notice on stderr; missing explicit `--config` → error without creating anything.
-- [ ] Default config text as a module constant, emitted by `--print-default-config`. It contains the description, the condensed format spec and an examples block (SPEC §3.3), with all lines commented out.
-      Write the final text **after** M9; for now a placeholder that only has the marker lines.
+- [ ] Default config text as a module constant, emitted by `--print-default-config`. Include the complete user-facing explanation,
+      condensed format specification, and examples required by SPEC §3.3; comment every line so a fresh config is inert.
+      Keep the final text task in M9, using a marker-only placeholder until then.
 - [ ] Tests with a temporary `HOME` / `XDG_*` environment: precedence order, creation, no creation for explicit path, relative XDG vars ignored.
 
 **Acceptance:** all lookup/creation cases tested; running with a fresh empty `HOME` creates the file and prints no states.
 
 ### M2 — Line reader and indentation tree (SPEC §4)
 
-- [ ] Tokenise the file into logical lines: skip blank and `#` lines; reject tabs in indentation; reject indented first line; Python-style indentation stack with "dedent to an open level" check.
+- [ ] Tokenise the file into logical lines: skip blank and `#` lines; allow indentation made of spaces or tabs, but reject indentation
+      that mixes spaces and tabs; reject an indented first line; use a Python-style indentation stack with a "dedent to an open level" check.
 - [ ] Classify lines: macro definition (`NAME := …`, checked first) vs interval line. Split interval line at the first `=`; detect leading `!`; error on empty INTERVAL / empty STATE.
 - [ ] Macro lines cannot have children.
 - [ ] STATE processing: escapes (`\~`, `\@`, `\\`, others error), `@` hidden marker (bare `@` → error), `~` substitution against the parent's effective name (errors per D7). Produce `effective_name`, `reported` flags.
@@ -79,8 +84,11 @@ Each milestone ends with a green `make test` and a commit.
 
 - [ ] Name validation: pattern, reserved words (months, weekdays, units, `until`, `UTC`/`GMT`/`Z`, abbreviation table from M5 — share one constant), redefinition against **visible** macros.
 - [ ] Scope stack tied to the indentation tree; sibling subtrees may reuse names.
-- [ ] Whole-word, single-pass expansion on raw text, for both INTERVAL and STRING values.
-- [ ] Command macros: `/bin/sh -c`, stdin `/dev/null`, timeout, env `MACRO_*`, `INTERVAL_KEEPER_AT`, `INTERVAL_<STATE>` for indented definitions (sanitised names, innermost wins). Error rules for exit status, empty and multi-line output.
+- [ ] Whole-word, single-pass expansion on raw text, for both INTERVAL and STRING values; resolve command macros lazily on first use.
+- [ ] Command macros: run `${SHELL:-/bin/sh} -c COMMAND`, stdin `/dev/null`, stderr inherited; non-zero exit is an error.
+      Pass inherited environment plus resolved visible macros as `KAIROS_MACRO_<NAME>`, `KAIROS_NOW` as ISO 8601 with offset,
+      and contextual `KAIROS_INTERVAL_<LEVEL>` / `KAIROS_STATE_<LEVEL>` for each ancestor and the current line (levels start at 0).
+      Strip trailing newlines and collapse embedded newlines to spaces. Empty output is valid. Do not add an unspecified timeout.
 - [ ] Pruning hook for default mode (SPEC §5.4): the parser asks a callback `parent_active(node)`; when false the subtree is structurally validated only where it depends on skipped commands. `--next-change` and `--check` pass a callback that always returns true.
       (The callback is implemented in M7; use a stub returning true until then.)
 
@@ -89,7 +97,9 @@ Each milestone ends with a green `make test` and a commit.
 ### M4 — Time zones (SPEC §8)
 
 - [ ] `resolve_tz(token)`: IANA (case-insensitive lookup against `zoneinfo.available_timezones()`), `UTC±H[H][[:]MM]` / `GMT±…` with ISO sign (use `datetime.timezone(timedelta)`), the abbreviation table, `Z`. Unsupported abbreviations → error naming the token.
-- [ ] Default zone: `--tz`, else `tzlocal.get_localzone()` (honours `$TZ`), fallback UTC + warning.
+- [ ] Default zone precedence: explicit `--tz`, then `$TZ`, then `tzlocal` system-zone discovery; fallback to UTC with a stderr warning.
+- [ ] Document the abbreviation table's source and provide a practical local command/example for listing or searching zone names from
+      the same `zoneinfo` database used by the program.
 - [ ] Tests: `CEST` in December behaves as `CET`; `UTC+0300` is east of Greenwich; `Etc/UTC`; `Europe/Budapest`; unknown names error.
 
 **Acceptance:** V9 resolution tests (zone objects and offsets on specific dates).
@@ -129,7 +139,11 @@ Each milestone ends with a green `make test` and a commit.
 
 ### M8 — `--next-change` (SPEC §10)
 
-- [ ] `--format` (`strftime`, `iso`, `epoch`), `--horizon`.
+- [ ] Implement `--format` (`strftime`, `iso`, `epoch`) and indefinite `--next-change` search. Do not add a horizon option.
+- [ ] Search intelligently from candidate boundaries derived from the parsed interval AST and its calendar/recurrence structure; do not
+      scan every second or blindly iterate every date forever. Account for explicit years, recurring clauses/spans, relative intervals,
+      merged ranges, and same-name state unions. Establish a defensible stopping/no-future-change condition; if no future change exists,
+      print nothing and exit 0 (the SPEC requires empty output but does not explicitly settle the exit code, so record that for resolution).
 
 **Acceptance:** all `--next-change` columns of V1–V8 exactly as listed; oracle test green; performance: `--next-change` on a 100-line config with a leap-day state (`Feb 29`) completes in under 5 s.
 
@@ -154,7 +168,7 @@ Each milestone ends with a green `make test` and a commit.
 
 | Risk | Mitigation |
 |------|-----------|
-| Relative intervals whose anchor starts long before the window | |
+| Relative intervals whose anchor starts long before the window | Widen look-back until the first relevant anchor instance is complete; test long durations and anchors with recurring and explicit years. |
 | Adjacent ranges across midnight or DST must merge or `--next-change` reports false changes | Merge in `RangeSet`; oracle test (V13) |
 | Zone names / abbreviations colliding with macro or month/weekday words | Lexer order and reserved-name list share one constant table |
 | Macro text substitution altering zone names | Spec'd limitation (§5.2); do not "fix" silently |
@@ -169,4 +183,26 @@ Each milestone ends with a green `make test` and a commit.
 
 ## 7. Open questions (append here)
 
-_none yet — the reviewer's answers to SPEC §0 D1–D13 go here as decisions, one line each._
+### Decisions recorded from SPEC §0 (D1–D13)
+
+- D1: Semantics are intersection; use `1-7 Fri` for the first Friday of each month.
+- D2: A day selector on a single clause selects the starting day of a rollover range; nested clauses intersect.
+- D3: A comma continues a list only when the next item has the same kind as the preceding item; otherwise it starts a new term.
+- D4: Command macros resolve lazily. Default mode prunes inactive subtrees; `--next-change` and `--check` evaluate fully.
+- D5: Do not add locale-dependent `MM/DD/YY`; use the documented `Easter := ! date -d "$(ncal -e)" +%F` example.
+- D6: `D until ANCHOR` includes the entire anchor instance, including the all-day end date.
+- D7: `~` inherits from the nearest ancestor with a STATE; error if none exists.
+- D8: A macro redefinition fails when the name is visible in the current/enclosing scope; sibling scopes may reuse names.
+- D9: Use the specified representative IANA zones for abbreviations; document the table source and local zone-listing/search method.
+- D10: Dependencies are stdlib, `python-dateutil`, `tzlocal`, and system `tzdata`.
+- D11: Executable is `kairos`; config is `$XDG_CONFIG_HOME/kairos/intervals.conf`.
+- D12: A missing explicitly named config is an error and is never created.
+- D13: `--next-change` searches indefinitely without a `--horizon` option; if there truly is no future change, print nothing.
+
+### Open questions to resolve explicitly before or during implementation
+
+- [ ] SPEC §10 / D13: Define an efficient, correct stopping/search strategy for indefinitely recurring and explicit-year expressions, including how to establish that no future state-set change exists without unbounded brute-force scanning.
+- [ ] SPEC §7.1: Resolve the bare time-point description: it says a bare `08:00` is a one-minute interval, but gives `08:00:00-08:00:59` as an equivalent example, which is only 60 seconds if the end is exclusive. State the exact endpoint semantics and add a conformance vector.
+- [ ] SPEC §7.1: Confirm DST gap/fold behavior for ranges crossing transitions and encode the intended behavior in tests, using `zoneinfo` / PEP 495 rather than custom timezone arithmetic.
+- [ ] SPEC §10 / §11: Decide and document the exit status when `--next-change` finds no future change; D13 settles empty stdout but the exit code is not explicit.
+- [ ] SPEC §8.2: Add a source URL for the abbreviation mapping and a locally runnable way to list/search IANA zones; do not imply abbreviations are canonical IANA identifiers.
