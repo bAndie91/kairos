@@ -200,9 +200,10 @@ def read_config(text: str, path: str | None = None) -> list[ConfigEntry]:
                 parent.children.append(entry)
                 if entry.state_raw is not None:
                     try:
-                        entry.effective_name, entry.reported = _decode_state(
+                        entry.effective_name, hidden = _decode_state(
                             entry.state_raw, parent, path, lineno
                         )
+                        entry.reported = not hidden
                     except IntervalKeeperError as exc:
                         errors.append(exc)
             else:
@@ -213,9 +214,10 @@ def read_config(text: str, path: str | None = None) -> list[ConfigEntry]:
             roots.append(entry)
             if isinstance(entry, Node) and entry.state_raw is not None:
                 try:
-                    entry.effective_name, entry.reported = _decode_state(
+                    entry.effective_name, hidden = _decode_state(
                         entry.state_raw, None, path, lineno
                     )
+                    entry.reported = not hidden
                 except IntervalKeeperError as exc:
                     errors.append(exc)
 
