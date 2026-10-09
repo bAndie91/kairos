@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Source-checkout launcher for the Kairos CLI."""
+from pathlib import Path
+import sys
+
+# Make package imports independent of the caller's working directory and PYTHONPATH.
+_REPO_ROOT = str(Path(__file__).resolve().parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from kairoslib.cli import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())
