@@ -19,7 +19,7 @@ This plan is written so that an agent with no other context can pick it up and c
 
 ## 1. Hard constraints (from the brief; violating them is a bug)
 
-* Single executable Python 3 script `kairos` in the repo root. Python ≥ 3.9.
+* Python ≥ 3.9. Keep a small executable launcher named `kairos` in the repository root and place implementation code in the `kairoslib/` package. The launcher contains no business logic.
 * **Never hand-write datetime logic.** All calendar, weekday, leap-year, month-length, time-zone, DST and month/year arithmetic goes through
   `datetime`, `zoneinfo`, `dateutil.relativedelta`. Only interval set algebra (lists of `(start, end)` instants) is custom.
 * On parse or semantic errors: message on stderr with file and line(s), try go on parsing to show other failing lines too, exit 2 at the end, **empty stdout**.
@@ -31,7 +31,8 @@ This plan is written so that an agent with no other context can pick it up and c
 ## 2. Repository layout (target)
 
 ```
-kairos            executable script, single file, sections separated by banner comments
+`kairos`          thin executable launcher importing `kairoslib.cli:main`
+kairoslib/        Python package with implementation modules (see SPEC §1.1)
 tests/
   helpers.py               loads the script as a module; run() helper for the CLI; ncal stub
   test_*.py                unittest test modules (stdlib unittest; pytest also works)
@@ -40,19 +41,17 @@ Makefile                   `make test` → python3 -m unittest discover -s tests
 SPEC.md  PLAN.md  README.md
 ```
 
-Suggested section order inside the script (keeps merge conflicts and navigation sane):
-`errors/exit codes` → `xdg & default config` → `line reader / indentation tree` → `macros` → `timezones` → `lexer` → `interval parser (AST)` →
-`range sets` → `AST evaluation` → `hierarchy & states` → `next-change` → `cli`.
+Module ownership follows SPEC §1.1. Keep each agent's edits within its assigned module(s) and test module(s); do not re-create the old single-file section ordering. Shared APIs and cross-module changes are coordinated by the integrator.
 
 
 ## 2.1 Parallel-work rules and dependency graph
 
-The implementation intentionally lives in one executable, `kairos`, which creates a merge-conflict risk. Parallelism therefore means **isolated branches and bounded ownership**, not concurrent edits to a shared checkout.
+Implementation units live in separate `kairoslib/` modules to reduce merge conflicts. Parallelism still means **isolated branches and bounded ownership**, not concurrent edits to a shared checkout.
 
 - The integrator creates one branch/worktree per agent from the same current `master`. Agents must not push directly to `master`, rewrite another agent's branch, or edit `PLAN.md` checkboxes.
-- Give each agent a narrow deliverable: named milestone(s), its own test module(s), and relevant banner-delimited section(s) of `kairos`. Avoid two agents changing the same section. Code branches are integration-ready proposals, not permission to merge blindly.
+- Give each agent a narrow deliverable: named milestone(s), owned `kairoslib/*.py` module(s), and its own test module(s). Avoid overlapping file ownership. Code branches are integration-ready proposals, not permission to merge blindly. The launcher, shared errors/interfaces, package exports, `Makefile`, and `PLAN.md` are integrator-owned unless explicitly delegated.
 - Test-file ownership should be disjoint: for example, `test_config.py`, `test_reader.py`, `test_macros.py`, `test_timezone.py`, `test_parser.py`, `test_ranges.py`, and `test_next_change.py`. Shared helpers and `Makefile` belong to the integrator; agents request helper changes rather than editing them concurrently.
-- Agree on public function names, AST dataclasses, node fields, error representation, and the shared timezone-abbreviation/reserved-word constant before dependent work begins. Do not create parallel, incompatible interfaces.
+- Agree on public function names, AST dataclasses, node fields, error representation, and the shared timezone-abbreviation/reserved-word constant before dependent work begins. Do not create parallel, incompatible interfaces. Put AST dataclasses in `parser.py` initially; if a separate `ast.py` becomes necessary, the integrator makes that change once and updates the import contract.
 - The integrator integrates one change to `kairos` at a time, rebases/cherry-picks as needed, runs affected tests, then the full `make test`. Resolve conflicts by preserving section ownership and the spec, not by choosing one branch wholesale. Update checkboxes only after integration and acceptance.
 - If an agent discovers a spec ambiguity, pause only the affected dependency chain; unrelated tasks may continue. Record the question here and make any behavioural change in a separate `spec:` commit.
 
@@ -69,9 +68,9 @@ M0 skeleton + test harness ├─ M2 line reader/tree ─ M3 macros ────
 Practical waves:
 
 1. **Bootstrap:** M0. It defines the test harness and stable error/CLI skeleton; do not parallelize edits to these shared foundations.
-2. **Parallel wave A:** M1, M2, and M4 may be developed on separate branches. M1 owns config/XDG code and `test_config.py`; M2 owns line-tree parsing and `test_reader.py`; M4 owns timezone resolution and `test_timezone.py`. The integrator lands them one at a time.
-3. **Parallel wave B:** after M2 is accepted and interfaces are agreed, M3 and M5 may proceed in parallel. M3 owns macro expansion/scope and `test_macros.py`; M5 owns lexer/AST parsing and `test_parser.py`. Both use the agreed timezone/reserved-name constants and AST/node contracts. M5 must not independently implement timezone resolution.
-4. **Parallel wave C:** once M4 and M5 are accepted, M6 implements range algebra/evaluation while M9 drafts README/default-config prose on a separate branch. M9's executable-example checks and final default-config equality test wait until M1 and M7 are integrated.
+2. **Parallel wave A:** M1, M2, and M4 may be developed on separate branches. M1 owns `config.py`/`defaults.py` config plumbing and `test_config.py`; M2 owns `reader.py` and `test_reader.py`; M4 owns `timezones.py` and `test_timezone.py`. The integrator lands them one at a time.
+3. **Parallel wave B:** after M2 is accepted and interfaces are agreed, M3 and M5 may proceed in parallel. M3 owns `macros.py` and `test_macros.py`; M5 owns `lexer.py`, `parser.py`, and `test_parser.py`. Both use the agreed timezone/reserved-name constants and AST/node contracts. M5 must not independently implement timezone resolution.
+4. **Parallel wave C:** once M4 and M5 are accepted, M6 owns `ranges.py`, `evaluate.py`, and `test_ranges.py`; M9 drafts README/default-config prose and owns `defaults.py` only if M1 has not started it (otherwise coordinate with M1). M9's executable-example checks and final default-config equality test wait until M1 and M7 are integrated.
 5. **Serial integration chain:** M7 waits for M2, M3, and M6. M8 waits for M5–M7 and the required boundary semantics. Do not implement M7/M8 against unfinished evaluator semantics.
 6. **Final gate:** the integrator runs the full suite on a clean integrated branch, checks every SPEC vector is covered, and only then marks milestones complete.
 
@@ -81,8 +80,8 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M0 — Skeleton and test harness
 
-- [ ] Create `kairos` with shebang, `main()`, `argparse` for **all** options in SPEC §2 (unimplemented ones may raise "not implemented" → exit 2).
-- [ ] `class IntervalKeeperError(Exception)` carrying `(path, line, message)`; single top-level handler prints `kairos: PATH:LINE: error: MESSAGE` and exits 2. Nothing else may print to stdout before success.
+- [ ] Create the thin root `kairos` launcher and `kairoslib/` package skeleton (`__init__.py`, `cli.py`, `errors.py`); the launcher imports and calls `kairoslib.cli:main`. Add `argparse` for **all** options in SPEC §2 (unimplemented ones may raise "not implemented" → exit 2).
+- [ ] Define `IntervalKeeperError` in `kairoslib/errors.py`, carrying `(path, line, message)`; the top-level handler in `cli.py` prints `kairos: PATH:LINE: error: MESSAGE` and exits 2. Nothing else may print to stdout before success.
 - [ ] `tests/helpers.py`: `load_module()` via `importlib.machinery.SourceFileLoader`; `run_cli(args, config_text=None, env=None)` returning `(code, stdout, stderr)` (feeds config through `--config -`); a fake `ncal` executable in a temp dir prepended to `PATH`
       that prints `04/05/26`.
 - [ ] `Makefile` with `test` target.
@@ -93,7 +92,7 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 - [ ] XDG lookup: `--config`, `$XDG_CONFIG_HOME`, `$XDG_CONFIG_DIRS`; ignore relative XDG paths; `--config -` reads stdin.
 - [ ] Create the default file when nothing found and no `--config` given (dir 0700 if created, file 0644); notice on stderr; missing explicit `--config` → error without creating anything.
-- [ ] Default config text as a module constant, emitted by `--print-default-config`. Include the complete user-facing explanation,
+- [ ] Default config text as a module constant in `kairoslib/defaults.py`, emitted by `--print-default-config`. Include the complete user-facing explanation,
       condensed format specification, and examples required by SPEC §3.3; comment every line so a fresh config is inert.
       Keep the final text task in M9, using a marker-only placeholder until then.
 - [ ] Tests with a temporary `HOME` / `XDG_*` environment: precedence order, creation, no creation for explicit path, relative XDG vars ignored.
@@ -143,14 +142,14 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 - [ ] Comma grouping rule D3 (same-kind continuation) producing terms.
 - [ ] Spans: sides, inheritance of year/month, rollover rules, times on both sides, recurring spans.
 - [ ] Relative forms: `union + duration`, `duration until union`, compound durations, TZ placement.
-- [ ] AST dataclasses: `Clause`, `Span`, `Union`, `RelPlus`, `RelUntil`. The parser never evaluates dates against the clock; it only validates.
+- [ ] AST dataclasses: `Clause`, `Span`, `Union`, `RelPlus`, `RelUntil`, defined canonically in `kairoslib/parser.py` and imported by consumers. The parser never evaluates dates against the clock; it only validates.
 
 **Acceptance:** every interval string in the brief parses; every parse-error case of V12 fails with a message containing the offending token; table-driven tests `text → AST repr`.
 
 ### M6 — Range sets and AST evaluation (SPEC §7.1, §9)
 
-- [ ] `RangeSet`: sorted, disjoint, half-open, adjacent ranges merged; `union`, `intersect`, `subtract`, `clip`, `contains(t)`, `boundaries()`. Property tests against a naive implementation on random small sets.
-- [ ] `eval(node, lo, hi, default_tz) -> RangeSet` with the exact-restriction contract `spec ∩ [lo, hi)`.
+- [ ] Implement `RangeSet` in `kairoslib/ranges.py`: sorted, disjoint, half-open, adjacent ranges merged; `union`, `intersect`, `subtract`, `clip`, `contains(t)`, `boundaries()`. Property tests against a naive implementation on random small sets.
+- [ ] Implement `eval(node, lo, hi, default_tz) -> RangeSet` in `kairoslib/evaluate.py` with the exact-restriction contract `spec ∩ [lo, hi)`.
   - `Clause`: iterate local dates of the clause's zone from `lo − 1 day` to `hi + 1 day` (using `datetime.date`), test the day-level items, emit ranges per time range, localize with `zoneinfo`, clip.
   - `Span`: iterate candidate years (recurring) or the single explicit year; endpoints via `datetime`; skip years where an endpoint does not exist.
   - `Union`: union of terms.
@@ -162,8 +161,8 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M7 — Hierarchy, states and default output (SPEC §7.2–7.4)
 
-- [ ] Effective sets `E(L)` (intersect with parent / subtract when negated).
-- [ ] Reported states, `U(name)` union across lines, ordering by first appearance, de-duplication.
+- [ ] Implement effective sets `E(L)` (intersect with parent / subtract when negated).
+- [ ] Implement reported-state unions, `U(name)` across lines, ordering by first appearance, and de-duplication in `kairoslib/states.py`.
 - [ ] Default mode: small window `[at, at+1s)`; implement the `parent_active` pruning callback for M3.
 - [ ] CLI: `--at`, `--tz`, print states, `--check`.
 
@@ -171,7 +170,7 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M8 — `--next-change` (SPEC §10)
 
-- [ ] Implement `--format` (`strftime`, `iso`, `epoch`) and indefinite `--next-change` search. Do not add a horizon option.
+- [ ] Implement candidate boundary generation and search in `kairoslib/next_change.py`; implement `--format` (`strftime`, `iso`, `epoch`) and indefinite `--next-change` search. Do not add a horizon option.
 - [ ] Implement AST-derived candidate-boundary streams: clauses jump directly to matching local dates/times; spans emit endpoints;
       relative intervals emit duration-adjusted anchor-instance boundaries. Merge candidates chronologically and compare the complete
       reported state set immediately before and at each candidate, ignoring boundaries hidden by overlapping ranges or same-name unions.
