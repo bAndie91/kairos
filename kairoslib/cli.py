@@ -5,6 +5,7 @@ import argparse
 import sys
 
 from . import __version__
+from .config import load_config
 from .errors import IntervalKeeperError
 
 
@@ -32,6 +33,9 @@ def main(argv: list[str] | None = None) -> int:
             from .defaults import DEFAULT_CONFIG
             sys.stdout.write(DEFAULT_CONFIG)
             return 0
+
+        _config_path, _config_text = load_config(args.config)
+        # Parsing and evaluation are implemented in subsequent milestones.
         raise IntervalKeeperError(None, None, "not implemented")
     except IntervalKeeperError as exc:
         print(exc.diagnostic(), file=sys.stderr)
