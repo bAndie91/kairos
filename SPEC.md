@@ -25,7 +25,7 @@ author: i stroke through what i don't want (most your decisions i agree with) an
 | D6 | `40 days until Dec 24` | End is the **end of the whole anchor instance** (so Dec 24 itself is included, mirroring `--` whose end date is inclusive). Range = Nov 15 00:00 → Dec 25 00:00. (§9) | ~~End at the *start* of Dec 24~~ | "until Dec 24" means "up to and including Dec 24" |
 | D7 | `~` in a STATE whose parent has no STATE | ~~Parse error.~~ | Inherit from the nearest ancestor with a STATE |
 | D8 | Macro redefinition | Error if the name is already **visible** (same scope or an enclosing active scope). Sibling scopes may reuse a name. (§5.3) | ~~Error only in the very same scope (allow shadowing)~~ |
-| D9 | TZ abbreviations | Fixed table mapping to representative IANA zones, e.g. `CET`/`CEST` → `Europe/Berlin`. Ambiguous abbreviations (`IST`, `CST` as China, …) are deliberately **not** supported; use IANA names. (§8.2) | ~~Different representative zones / bigger table~~ | add a link to the source where this table ican be found and/or a command by which the user can list/search these TZ names locally (out of the same lib/module what the programm uses) |
+| D9 | TZ abbreviations | Use IANA TZDB for zone rules and its supplied abbreviations for display; do not maintain a hand-written abbreviation-to-zone map. Since abbreviations are ambiguous and do not identify a unique zone, accept only IANA zone IDs, numeric UTC offsets, and explicit UTC/GMT/Z forms in §8.1. | ~~Hand-written representative-zone mapping~~ | Examples such as `CEST → Europe/Berlin` were illustrative only, not required mappings. |
 | D10 | Dependencies | stdlib (`datetime`, `zoneinfo`) + `python-dateutil` (`relativedelta`) + `tzlocal` (local zone discovery) + system `tzdata`. (§12) | ~~stdlib only (hand-rolled local-zone discovery)~~ |
 | D11 | Names | Script `kairos` (no `.py`); config `$XDG_CONFIG_HOME/kairos/intervals.conf`. (§3) | | agreed |
 | D12 | `--config PATH` that does not exist | Error (exit 2); the default file is created only when **no** config is specified and none is found. (§3.2) | ~~Create it at PATH~~ |
@@ -68,7 +68,7 @@ kairoslib/
   defaults.py           default config text constant
   reader.py             logical lines, indentation tree, STATE processing
   macros.py             macro scope, expansion and command execution
-  timezones.py          zone resolution and abbreviation table
+  timezones.py          zone resolution using IANA TZDB / zoneinfo
   lexer.py              INTERVAL tokenization
   parser.py             INTERVAL grammar and AST dataclasses
   ranges.py             RangeSet algebra and half-open interval primitives
@@ -236,8 +236,7 @@ Names are case-sensitive for macros.
 
 * names are case sensitive and allowed to have space, punctuation, etc. (eg. `Mary's birthday`)
 * longer macro names are tried first, so `birthday` and `Mary's birthday` can coexist.
-* Reserved (case-insensitive) → error: month names and weekday names (full and 3-letter, `Sept`), duration units (§9), `until`,
-  `UTC`, `GMT`, `Z`, and every abbreviation in the §8.2 table.
+* Reserved (case-insensitive) → error: month names and weekday names (full and 3-letter, `Sept`), duration units (§9), `until`, `UTC`, `GMT`, and `Z`. Other timezone-looking strings are TZ tokens only if they match §8.1; there is no abbreviation table.
 * A macro defined at indentation 0 is visible to all following lines. A macro defined at deeper indentation, as a child of
   line P, is visible to the lines that follow it inside P's subtree. Leaving the subtree ends the scope.
 * Redefining a name that is **visible** at that point (same scope or enclosing scope) → error (D8). Two sibling subtrees may define the same name.
@@ -270,7 +269,7 @@ After macro expansion the text is tokenised, whitespace being insignificant exce
 | `TIME` | `HH:MM`, `HH:MM:SS`, `HHh`, `MMm`, `MMmin` |
 | `NUMBER` | digits |
 | `--` `-` `+` `,` `*` | punctuation (`--` is a span operator, `-` a range operator) |
-| `TZ` | forms of §8.1 |
+| `TZ` | IANA zone IDs, numeric UTC offsets, and explicit UTC/GMT/Z forms of §8.1 |
 | `WORD` | letters (month / weekday / unit / `until`, case-insensitive) |
 
 Unknown word → error (`unknown word 'X' (undefined macro?)`).
@@ -397,31 +396,32 @@ At top level it is the complement of INTERVAL.
 
 ### 8.1 Accepted `TZ` forms
 
-* IANA names: `Europe/Budapest`, `Etc/UTC`, `America/Argentina/Buenos_Aires`, `UTC` (looked up case-insensitively against `zoneinfo.available_timezones()`).
-* Offsets: `UTC±H`, `UTC±HH`, `UTC±HHMM`, `UTC±HH:MM` and the same with `GMT` — **ISO sign convention**: `UTC+0300` is three hours *east* of Greenwich
-  (unlike POSIX `Etc/GMT-3`). Also `Z`.
-* Abbreviations from §8.2.
+* IANA zone IDs, e.g. `Europe/Budapest`, `Etc/UTC`, `America/Argentina/Buenos_Aires`, and `UTC`, looked up case-insensitively against `zoneinfo.available_timezones()`.
+* Numeric offsets: `UTC±H`, `UTC±HH`, `UTC±HHMM`, `UTC±HH:MM`, and the same with `GMT`. Use the ISO sign convention: `UTC+0300` is three hours east of Greenwich (unlike POSIX `Etc/GMT-3`).
+* `Z`, `UTC`, and `GMT` denote UTC. `GMT+1` and similar strings are offset forms.
 
-No `TZ` → the default zone (`--tz`, else `$TZ`, else system zone via `tzlocal`; fallback UTC with a stderr warning).
+Alphabetic timezone abbreviations other than `UTC`/`GMT` are **not accepted as input TZ tokens**. There is no standardized, globally unique abbreviation-to-zone registry: the IANA Time Zone Database records abbreviations as part of individual zones' historical and future rules, and the same abbreviation can identify different zones or offsets. Do not infer a zone from a string such as `CST` or `CEST`, and do not ship a hand-written mapping. Use an IANA zone ID when calendar/DST rules are intended, or a numeric offset when a fixed offset is intended.
+
+For diagnostics and display, timezone abbreviations exposed by `zoneinfo`/`datetime.tzname()` come from the installed IANA TZDB (system zoneinfo data, or the Python `tzdata` package fallback where available). Their values may vary with the chosen zone, date, and installed TZDB version; they are labels, not unique identifiers. See the [IANA tz database theory](https://www.iana.org/time-zones/theory), which explicitly warns that abbreviations such as `CST` are ambiguous, and [Python `zoneinfo` documentation](https://docs.python.org/3/library/zoneinfo.html).
+
+No `TZ` → the default zone (`--tz`, else `$TZ`, else system zone via `tzlocal`; fallback UTC with a stderr warning). `$TZ` follows the same accepted forms; POSIX rule strings and bare abbreviations are not interpreted specially.
 The zone applies to the whole clause (or span): the calendar days, the times of day and any duration arithmetic of §9.
 
-### 8.2 Abbreviation table
+### 8.2 Abbreviation data and local inspection
 
-An abbreviation names a **zone with DST rules**, so both members of a pair are accepted for any date (D9); the actual offset is what the TZ by that name defines, so CEST is UTC+2 in both summer and winter (when CET should be used), and should show a warning about misplaced TZ name.
-`*-12-* 08:00-09:00 CEST` is therefore taken as 07:00–08:00 CET when actually computed in December. This is not an issue when TZ is not specified.
+Kairos does not define or maintain an abbreviation table. Zone abbreviations are supplied by the selected IANA TZDB zone data and are used only as names returned by the timezone implementation, not as identifiers accepted in interval syntax. To inspect the abbreviation for a particular zone and instant, run:
 
-| Abbreviations | Zone |
-|---------------|------|
-| `CET`, `CEST` | `Europe/Berlin` |
-| `EET`, `EEST` | `Europe/Helsinki` |
-| `WET`, `WEST` | `Europe/Lisbon` |
-| `EST`, `EDT` | `America/New_York` |
-| `CST`, `CDT` | `America/Chicago` |
-| `MST`, `MDT` | `America/Denver` |
-| `PST`, `PDT` | `America/Los_Angeles` |
-| `UTC`, `GMT`, `Z` | UTC (fixed offset, no DST). `GMT+1` etc. are offset forms (§8.1) |
+```sh
+python3 -c 'from datetime import datetime; from zoneinfo import ZoneInfo; d=datetime(2026, 10, 9, tzinfo=ZoneInfo("Europe/Budapest")); print(d.tzname(), d.utcoffset())'
+```
 
-Not supported (ambiguous): `IST`, `BST`, `CAT`, `AST`, … → error asking for an IANA name.
+To list zone IDs available to the same database used by Python:
+
+```sh
+python3 -c 'from zoneinfo import available_timezones; print("\\n".join(sorted(available_timezones())))'
+```
+
+The installed data source is normally system TZDB; Python's `tzdata` package is the fallback when system zoneinfo data is unavailable. The abbreviation set is not a portable or unique index of zones; select an IANA zone ID explicitly.
 
 ---
 
@@ -549,7 +549,7 @@ at 2026-11-14 23:59:59 → ∅; at 2026-11-15 00:00:00 → `runup`; at 2026-12-2
 **V8** spans: `Apr 1 -- Jun 15 = spring` active at 2027-06-15 23:59:59, not at 2027-06-16 00:00:00. `Dec 20 -- Jan 10 = holidays`: active at 2027-01-05 12:00; next at 2026-10-09 12:00 → `2026-12-20 00:00:00`.
 `2026 Apr 1 -- 20 = x` active at 2026-04-20 12:00, not at 2026-04-21 00:00:00, not at 2027-04-10.
 
-**V9** zones (`tz=UTC`): `*-12-* 08:00-09:00 CEST = t` → active at 2026-12-01 07:30:00, not at 2026-12-01 06:59:59. `*-07-* 08:00-09:00 CET = t` → active at 2026-07-01 06:30:00. `08:00-09:00 UTC+0300 = t` → active at 2026-10-09 05:30:00.
+**V9** zones (`tz=UTC`): `*-12-* 08:00-09:00 Europe/Berlin = t` → active at 2026-12-01 07:30:00, not at 2026-12-01 06:59:59. `*-07-* 08:00-09:00 Europe/Berlin = t` → active at 2026-07-01 06:30:00. `08:00-09:00 UTC+0300 = t` → active at 2026-10-09 05:30:00. Bare alphabetic abbreviations such as `CEST` and `CST` as TZ tokens must error and ask for an IANA zone ID or numeric offset.
 
 **V10** macros:
 ```
