@@ -7,15 +7,15 @@ This plan is written so that an agent with no other context can pick it up and c
 
 1. Read `SPEC.md` completely, especially §0 (decisions D1–D13) and §13 (conformance vectors).
    Decisions marked as awaiting review in the repo's review thread may change; if `SPEC.md` has changed, it wins over this plan.
-2. Work through the milestones **in order**. Each milestone lists tasks (checkboxes) and an **acceptance** block.
-   Do not start a milestone before the previous one's acceptance passes.
-3. Tick the checkbox in this file in the same commit that completes the task.
-4. If the spec is ambiguous or contradicts itself: do **not** guess or automatically choose a parse error. Record the exact conflict in
+2. Follow the dependency graph in §2.1. Milestones may run in parallel only where the graph says so; acceptance gates apply before dependent work is integrated, not before unrelated work starts.
+3. Each agent works on a separate branch/worktree and submits commits or a patch to the integrator. **Do not have multiple agents push to `master` or edit the same working tree.** The integrator alone updates `master` and this plan's checkboxes.
+4. Tick a checkbox only when its task is integrated and its acceptance checks pass; do not tick it merely because an agent's branch is ready.
+5. If the spec is ambiguous or contradicts itself: do **not** guess or automatically choose a parse error. Record the exact conflict in
    "Open questions", compare the relevant normative text and conformance vectors, and resolve it explicitly. Prefer the SPEC's
    stated decisions and examples; make a spec correction in a separate commit if those conflict. Use a parse error only when the
    specification requires rejection or no consistent interpretation is possible.
-5. Commit small and often, one task or tightly related group per commit, imperative subject line (`Parse ISO dates with wildcards`).
-6. Never change `SPEC.md` behaviour silently. Spec corrections are separate commits whose message starts with `spec:`.
+6. Commit small and often, one task or tightly related group per commit, imperative subject line (`Parse ISO dates with wildcards`).
+7. Never change `SPEC.md` behaviour silently. Spec corrections are separate commits whose message starts with `spec:`.
 
 ## 1. Hard constraints (from the brief; violating them is a bug)
 
@@ -44,9 +44,40 @@ Suggested section order inside the script (keeps merge conflicts and navigation 
 `errors/exit codes` → `xdg & default config` → `line reader / indentation tree` → `macros` → `timezones` → `lexer` → `interval parser (AST)` →
 `range sets` → `AST evaluation` → `hierarchy & states` → `next-change` → `cli`.
 
+
+## 2.1 Parallel-work rules and dependency graph
+
+The implementation intentionally lives in one executable, `kairos`, which creates a merge-conflict risk. Parallelism therefore means **isolated branches and bounded ownership**, not concurrent edits to a shared checkout.
+
+- The integrator creates one branch/worktree per agent from the same current `master`. Agents must not push directly to `master`, rewrite another agent's branch, or edit `PLAN.md` checkboxes.
+- Give each agent a narrow deliverable: named milestone(s), its own test module(s), and relevant banner-delimited section(s) of `kairos`. Avoid two agents changing the same section. Code branches are integration-ready proposals, not permission to merge blindly.
+- Test-file ownership should be disjoint: for example, `test_config.py`, `test_reader.py`, `test_macros.py`, `test_timezone.py`, `test_parser.py`, `test_ranges.py`, and `test_next_change.py`. Shared helpers and `Makefile` belong to the integrator; agents request helper changes rather than editing them concurrently.
+- Agree on public function names, AST dataclasses, node fields, error representation, and the shared timezone-abbreviation/reserved-word constant before dependent work begins. Do not create parallel, incompatible interfaces.
+- The integrator integrates one change to `kairos` at a time, rebases/cherry-picks as needed, runs affected tests, then the full `make test`. Resolve conflicts by preserving section ownership and the spec, not by choosing one branch wholesale. Update checkboxes only after integration and acceptance.
+- If an agent discovers a spec ambiguity, pause only the affected dependency chain; unrelated tasks may continue. Record the question here and make any behavioural change in a separate `spec:` commit.
+
+Dependency graph (arrows mean “must be accepted before the dependent task”; independent branches can progress at once):
+
+```text
+                           ┌─ M1 config discovery/default-config plumbing ────────────────┐
+M0 skeleton + test harness ├─ M2 line reader/tree ─ M3 macros ─────────────────────────┐  │
+                           ├─ M4 timezone resolver ────────────────────────┐           ├─ M7 hierarchy/CLI ─ M8 next-change ─┐
+                           └─ M5 lexer/parser AST (after M2; shared interfaces) ─ M6 range sets/evaluation ─────────────────┘  ├─ M9 final checks
+                                                                                                                              ┘
+```
+
+Practical waves:
+
+1. **Bootstrap:** M0. It defines the test harness and stable error/CLI skeleton; do not parallelize edits to these shared foundations.
+2. **Parallel wave A:** M1, M2, and M4 may be developed on separate branches. M1 owns config/XDG code and `test_config.py`; M2 owns line-tree parsing and `test_reader.py`; M4 owns timezone resolution and `test_timezone.py`. The integrator lands them one at a time.
+3. **Parallel wave B:** after M2 is accepted and interfaces are agreed, M3 and M5 may proceed in parallel. M3 owns macro expansion/scope and `test_macros.py`; M5 owns lexer/AST parsing and `test_parser.py`. Both use the agreed timezone/reserved-name constants and AST/node contracts. M5 must not independently implement timezone resolution.
+4. **Parallel wave C:** once M4 and M5 are accepted, M6 implements range algebra/evaluation while M9 drafts README/default-config prose on a separate branch. M9's executable-example checks and final default-config equality test wait until M1 and M7 are integrated.
+5. **Serial integration chain:** M7 waits for M2, M3, and M6. M8 waits for M5–M7 and the required boundary semantics. Do not implement M7/M8 against unfinished evaluator semantics.
+6. **Final gate:** the integrator runs the full suite on a clean integrated branch, checks every SPEC vector is covered, and only then marks milestones complete.
+
 ## 3. Milestones
 
-Each milestone ends with a green `make test` and a commit.
+Each milestone has focused acceptance checks. Run focused tests during development; the integrator runs full `make test` after each integration batch and at the final gate. The dependency graph above, rather than milestone numbering alone, determines what may proceed concurrently.
 
 ### M0 — Skeleton and test harness
 
@@ -82,7 +113,7 @@ Each milestone ends with a green `make test` and a commit.
 
 ### M3 — Macros (SPEC §5)
 
-- [ ] Name validation: pattern, reserved words (months, weekdays, units, `until`, `UTC`/`GMT`/`Z`, abbreviation table from M5 — share one constant), redefinition against **visible** macros.
+- [ ] Name validation: pattern, reserved words (months, weekdays, units, `until`, `UTC`/`GMT`/`Z`, and the agreed timezone-abbreviation table), redefinition against **visible** macros. Consume the shared constant/interface agreed with M4; do not duplicate the table.
 - [ ] Scope stack tied to the indentation tree; sibling subtrees may reuse names.
 - [ ] Whole-word, single-pass expansion on raw text, for both INTERVAL and STRING values; resolve command macros lazily on first use.
 - [ ] Command macros: run `${SHELL:-/bin/sh} -c COMMAND`, stdin `/dev/null`, stderr inherited; non-zero exit is an error.
@@ -106,7 +137,7 @@ Each milestone ends with a green `make test` and a commit.
 
 ### M5 — Interval lexer and parser → AST (SPEC §6)
 
-- [ ] Lexer with the token order of §6.1 (ISO date before number, `--` before `-`, TZ forms, words).
+- [ ] Lexer with the token order of §6.1 (ISO date before number, `--` before `-`, TZ forms, words). Use the M4 timezone token/reserved-name interface; the parser does not resolve zone objects.
 - [ ] Item kinds and ranges, number classification (< 100 DOM, ≥ 100 YEAR), month/weekday names (full, 3-letter, `Sept`, case-insensitive).
 - [ ] Clause conjunction rules and all clause errors (duplicate kind, DATE vs Y/M/D, impossible dates incl. `Feb 30`, `2026-02-29`, `*-04-31`; `Feb 29` ok).
 - [ ] Comma grouping rule D3 (same-kind continuation) producing terms.
@@ -159,6 +190,8 @@ Each milestone ends with a green `make test` and a commit.
 **Acceptance:** all `--next-change` columns of V1–V8 and the no-future-change cases pass; V13 brute-force oracle agrees; V14 DST/bare-time boundary tests pass. A 100-line config with a leap-day state (`Feb 29`) completes in under 5 s without scanning every second or every date. Include a case where overlapping same-name intervals create candidate boundaries but no reported state change.
 
 ### M9 — Default config text, docs, polish
+
+This milestone can draft prose and README material during M6, but executable-example checks and final acceptance depend on M1 and M7 being integrated.
 
 - [ ] Write the final default config text (SPEC §3.3), including the brief's examples with the working `Easter` wrapper
       (`Easter := ! date -d "$(ncal -e)" +%F`) and the security note about macro commands.
