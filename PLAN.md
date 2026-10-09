@@ -126,13 +126,14 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M4 — Time zones (SPEC §8)
 
-- [ ] `resolve_tz(token)`: case-insensitive IANA zone ID lookup via `zoneinfo.available_timezones()`; numeric `UTC±H[H][[:]MM]` / `GMT±…` offsets with ISO sign (use `datetime.timezone(timedelta)`); and `UTC`, `GMT`, `Z` as UTC.
-- [ ] Do **not** maintain a hand-written abbreviation-to-zone mapping. IANA TZDB provides abbreviations as part of each zone's rules/display names, but it does not provide a globally unique mapping from an abbreviation such as `CST` or `CEST` to a zone. Per SPEC §8, alphabetic abbreviations other than `UTC`/`GMT` are not accepted as input TZ tokens.
-- [ ] Default zone precedence: explicit `--tz`, then `$TZ`, then `tzlocal` system-zone discovery; fallback to UTC with a stderr warning. Apply the same accepted token forms to `$TZ`; do not parse POSIX rule strings or bare abbreviations specially.
-- [ ] Document IANA TZDB as the source for zone rules and returned abbreviations; include upstream source links and commands to list available IANA zone IDs and inspect a zone's abbreviation at a given instant.
-- [ ] Tests: IANA names (`Etc/UTC`, `Europe/Budapest`), case-insensitive lookup, `UTC+0300` east of Greenwich, invalid offset, unknown zone, and errors for bare `CEST`/`CST` input.
+- [ ] Implement `resolve_tz(token)` using `zoneinfo.available_timezones()` and `ZoneInfo`: IANA IDs are case-insensitive; support `UTC`, `GMT`, `Z`, and `UTC±H[H][[:]MM]` / `GMT±…` numeric offsets with ISO sign convention.
+- [ ] Do not maintain an application-owned abbreviation-to-zone map. Reject bare alphabetic abbreviations other than UTC/GMT (for example `CST`, `CEST`) with a clear error; abbreviations may be displayed only as labels produced by the selected zone's rules for a specific instant.
+- [ ] Default zone precedence: explicit `--tz`, then `$TZ`, then `tzlocal` system-zone discovery; fall back to UTC with a stderr warning if discovery fails.
+- [ ] Document the IANA database source and provide practical commands to list available IDs and inspect the abbreviation produced for a chosen zone and instant.
+- [ ] Tests: `UTC+0300` is east of Greenwich; offset validation; `Etc/UTC`; `Europe/Budapest`; case-insensitive IDs; bare `CEST`/`CST` rejected; unknown IDs error; default-zone precedence/fallback.
 
-**Acceptance:** V9 resolution tests use IANA zone IDs and numeric offsets; no hard-coded abbreviation map exists.
+**Acceptance:** M4 tests confirm zone objects and offsets on specific dates, and no abbreviation mapping remains in application code.
+
 ### M5 — Interval lexer and parser → AST (SPEC §6)
 
 - [ ] Lexer with the token order of §6.1 (ISO date before number, `--` before `-`, supported TZ forms, words). Use the M4 timezone-token/reserved-name interface; the parser does not resolve zone objects. Alphabetic timezone abbreviations other than `UTC`/`GMT` are not TZ tokens.
