@@ -124,7 +124,8 @@ Each milestone ends with a green `make test` and a commit.
   - `Span`: iterate candidate years (recurring) or the single explicit year; endpoints via `datetime`; skip years where an endpoint does not exist.
   - `Union`: union of terms.
   - `RelPlus` / `RelUntil`: evaluate anchor over a widened window, take instance starts/ends, and apply duration pairs in the specified order: all calendar units (day/week/month/year) first via `relativedelta`, then elapsed units (hour/minute/second) in UTC. Widen until the first instance in the window is complete; clip.
-- [ ] DST tests: gap and fold days in `Europe/Budapest` (2026-03-29, 2026-10-25) — `02:00-03:00`, `01:00-04:00`, `Mon-Fri 08:00-16:00` across the switch.
+- [ ] Implement the exact bare-time semantics: `08:00` is `[08:00:00,08:01:00)`; as a relative anchor its instance start is 08:00:00 and its one-minute duration is ignored.
+- [ ] DST tests from SPEC V14: `Europe/Budapest` gap (2026-03-29) and fold (2026-10-25), including exact UTC boundary assertions for `02:00-03:00`, `01:00-04:00`, and `Mon-Fri 08:00-16:00`. Check both activity and inactivity at each stated boundary; use `zoneinfo` / PEP 495 semantics, not custom timezone arithmetic.
 
 **Acceptance:** evaluation tests for V1, V2, V3, V7, V8, V9 interval texts on single lines (no hierarchy yet).
 
@@ -145,7 +146,7 @@ Each milestone ends with a green `make test` and a commit.
       merged ranges, and same-name state unions. Establish a defensible stopping/no-future-change condition; if no future change exists,
       print nothing and exit 0 (the SPEC requires empty output but does not explicitly settle the exit code, so record that for resolution).
 
-**Acceptance:** all `--next-change` columns of V1–V8 exactly as listed; oracle test green; performance: `--next-change` on a 100-line config with a leap-day state (`Feb 29`) completes in under 5 s.
+**Acceptance:** all `--next-change` columns of V1–V8 and the no-future-change cases pass; V13 brute-force oracle agrees; V14 DST/bare-time boundary tests pass. A 100-line config with a leap-day state (`Feb 29`) completes in under 5 s without scanning every second or every date. Include a case where overlapping same-name intervals create candidate boundaries but no reported state change.
 
 ### M9 — Default config text, docs, polish
 
@@ -201,8 +202,5 @@ Each milestone ends with a green `make test` and a commit.
 
 ### Open questions to resolve explicitly before or during implementation
 
-- [ ] SPEC §10 / D13: Define an efficient, correct stopping/search strategy for indefinitely recurring and explicit-year expressions, including how to establish that no future state-set change exists without unbounded brute-force scanning.
-- [ ] SPEC §7.1: Resolve the bare time-point description: it says a bare `08:00` is a one-minute interval, but gives `08:00:00-08:00:59` as an equivalent example, which is only 60 seconds if the end is exclusive. State the exact endpoint semantics and add a conformance vector.
-- [ ] SPEC §7.1: Confirm DST gap/fold behavior for ranges crossing transitions and encode the intended behavior in tests, using `zoneinfo` / PEP 495 rather than custom timezone arithmetic.
-- [ ] SPEC §10 / §11: Decide and document the exit status when `--next-change` finds no future change; D13 settles empty stdout but the exit code is not explicit.
 - [ ] SPEC §8.2: Add a source URL for the abbreviation mapping and a locally runnable way to list/search IANA zones; do not imply abbreviations are canonical IANA identifiers.
+- [ ] Validate the V14 transition expectations against the actual `zoneinfo` behavior on supported Python versions and make any discrepancy an explicit spec decision, not an undocumented implementation adjustment.
