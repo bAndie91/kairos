@@ -33,9 +33,15 @@ class TimezoneTests(unittest.TestCase):
                 resolve_tz(token)
 
     def test_bare_abbreviations_are_rejected(self) -> None:
-        for token in ("CEST", "CET", "CST", "IST", "EDT", "PST"):
+        for token in ("CEST", "CST", "IST", "EDT", "PST"):
             with self.subTest(token=token), self.assertRaisesRegex(IntervalKeeperError, "unsupported alphabetic time-zone abbreviation"):
                 resolve_tz(token)
+
+    def test_legacy_iana_ids_that_look_like_abbreviations_are_zones(self) -> None:
+        for token in ("CET", "EET", "WET", "MET", "EST", "MST", "HST", "PST8PDT"):
+            with self.subTest(token=token):
+                self.assertEqual(resolve_tz(token), ZoneInfo(token))
+        self.assertEqual(resolve_tz("cet"), ZoneInfo("CET"))
 
     def test_unknown_iana_zone_errors(self) -> None:
         with self.assertRaisesRegex(IntervalKeeperError, "unknown IANA time-zone ID"):
