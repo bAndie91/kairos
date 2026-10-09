@@ -1,4 +1,4 @@
-# interval-keeper — execution plan
+# kairos — execution plan
 
 Status: **DRAFT 0.1 — for review.** Companion to `SPEC.md`, which is the source of truth for behaviour.
 This plan is written so that an agent with no other context can pick it up and continue.
@@ -17,18 +17,18 @@ This plan is written so that an agent with no other context can pick it up and c
 
 ## 1. Hard constraints (from the brief; violating them is a bug)
 
-* Single executable Python 3 script `interval-keeper` in the repo root. Python ≥ 3.9.
+* Single executable Python 3 script `kairos` in the repo root. Python ≥ 3.9.
 * **Never hand-write datetime logic.** All calendar, weekday, leap-year, month-length, time-zone, DST and month/year arithmetic goes through
   `datetime`, `zoneinfo`, `dateutil.relativedelta`. Only interval set algebra (lists of `(start, end)` instants) is custom.
-* Fail immediately on any parse or semantic error: exit 2, **empty stdout**, message on stderr with file and line.
-  Parse the whole config before printing anything.
+* On parse or semantic errors: message on stderr with file and line(s), try go on parsing to show other failing lines too, exit 2 at the end, **empty stdout**.
+  Parse the whole config before printing normal output. Print errors as it goes.
 * Config lookup via XDG; create the default config when none is found (and no `--config` was given).
-* Do not introduce or suggest anything outside the spec's dependency list (stdlib, `python-dateutil`, `tzlocal`, system `tzdata`).
+* May suggest other libs besides the spec's dependency list (stdlib, `python-dateutil`, `tzlocal`, system `tzdata`).
 
 ## 2. Repository layout (target)
 
 ```
-interval-keeper            executable script, single file, sections separated by banner comments
+kairos            executable script, single file, sections separated by banner comments
 tests/
   helpers.py               loads the script as a module; run() helper for the CLI; ncal stub
   test_*.py                unittest test modules (stdlib unittest; pytest also works)
@@ -47,13 +47,13 @@ Each milestone ends with a green `make test` and a commit.
 
 ### M0 — Skeleton and test harness
 
-- [ ] Create `interval-keeper` with shebang, `main()`, `argparse` for **all** options in SPEC §2 (unimplemented ones may raise "not implemented" → exit 2).
-- [ ] `class IntervalKeeperError(Exception)` carrying `(path, line, message)`; single top-level handler prints `interval-keeper: PATH:LINE: error: MESSAGE` and exits 2. Nothing else may print to stdout before success.
+- [ ] Create `kairos` with shebang, `main()`, `argparse` for **all** options in SPEC §2 (unimplemented ones may raise "not implemented" → exit 2).
+- [ ] `class IntervalKeeperError(Exception)` carrying `(path, line, message)`; single top-level handler prints `kairos: PATH:LINE: error: MESSAGE` and exits 2. Nothing else may print to stdout before success.
 - [ ] `tests/helpers.py`: `load_module()` via `importlib.machinery.SourceFileLoader`; `run_cli(args, config_text=None, env=None)` returning `(code, stdout, stderr)` (feeds config through `--config -`); a fake `ncal` executable in a temp dir prepended to `PATH`
       that prints `04/05/26`.
 - [ ] `Makefile` with `test` target.
 
-**Acceptance:** `interval-keeper --help` and `--version` work; a trivial test runs; an unknown option exits 2 with empty stdout.
+**Acceptance:** `kairos --help` and `--version` work; a trivial test runs; an unknown option exits 2 with empty stdout.
 
 ### M1 — Config discovery and default config (SPEC §3)
 
@@ -129,9 +129,7 @@ Each milestone ends with a green `make test` and a commit.
 
 ### M8 — `--next-change` (SPEC §10)
 
-- [ ] Window-growing search (2 d → 32 d → 400 d → horizon), ignoring boundaries equal to the window end, merging same-name states, exit 1 beyond horizon.
 - [ ] `--format` (`strftime`, `iso`, `epoch`), `--horizon`.
-- [ ] Brute-force oracle test (V13): step by 1 s (or 1 min) from `at` over a bounded span for each fixture config; compare. Include configs with day, month, year and relative intervals; seeded random `at` values; keep the run under ~60 s.
 
 **Acceptance:** all `--next-change` columns of V1–V8 exactly as listed; oracle test green; performance: `--next-change` on a 100-line config with a leap-day state (`Feb 29`) completes in under 5 s.
 
@@ -156,9 +154,8 @@ Each milestone ends with a green `make test` and a commit.
 
 | Risk | Mitigation |
 |------|-----------|
-| Relative intervals whose anchor starts long before the window | M6 look-back loop with a bound = horizon; test with `2026 + 1 day`-style anchors and `Mon-Fri + 5 day` |
+| Relative intervals whose anchor starts long before the window | |
 | Adjacent ranges across midnight or DST must merge or `--next-change` reports false changes | Merge in `RangeSet`; oracle test (V13) |
-| Day iteration cost over a 10-year horizon × many lines | Evaluate only reported/needed lines; window growth; cache `E(L)` per window; budget in M8 acceptance |
 | Zone names / abbreviations colliding with macro or month/weekday words | Lexer order and reserved-name list share one constant table |
 | Macro text substitution altering zone names | Spec'd limitation (§5.2); do not "fix" silently |
 | `ncal -e` output is locale-dependent | Never rely on it in tests; use the fake `ncal` and `date -d` wrapper |
@@ -167,7 +164,7 @@ Each milestone ends with a green `make test` and a commit.
 
 * All milestones ticked; `make test` passes from a clean checkout on Python 3.9 and the newest available 3.x.
 * Every vector in SPEC §13 is covered by a test.
-* `interval-keeper` with no config in a fresh environment creates the default file and exits 0 with no output.
+* `kairos` with no config in a fresh environment creates the default file and exits 0 with no output.
 * No hand-written date arithmetic remains: grep the script for manual month-length tables, leap-year formulas, or `* 86400` style day arithmetic.
 
 ## 7. Open questions (append here)
