@@ -141,10 +141,20 @@ Each milestone ends with a green `make test` and a commit.
 ### M8 — `--next-change` (SPEC §10)
 
 - [ ] Implement `--format` (`strftime`, `iso`, `epoch`) and indefinite `--next-change` search. Do not add a horizon option.
-- [ ] Search intelligently from candidate boundaries derived from the parsed interval AST and its calendar/recurrence structure; do not
-      scan every second or blindly iterate every date forever. Account for explicit years, recurring clauses/spans, relative intervals,
-      merged ranges, and same-name state unions. Establish a defensible stopping/no-future-change condition; if no future change exists,
-      print nothing and exit 0 (the SPEC requires empty output but does not explicitly settle the exit code, so record that for resolution).
+- [ ] Implement AST-derived candidate-boundary streams: clauses jump directly to matching local dates/times; spans emit endpoints;
+      relative intervals emit duration-adjusted anchor-instance boundaries. Merge candidates chronologically and compare the complete
+      reported state set immediately before and at each candidate, ignoring boundaries hidden by overlapping ranges or same-name unions.
+- [ ] Separate finite exceptions from recurring terms. Track the end of explicit-year contributions and every finite relative-interval
+      duration tail before treating the remaining schedule as recurring.
+- [ ] Implement a no-future-change proof: recurring Gregorian calendar patterns (including weekday/leap-day selectors and calendar
+      durations) repeat on the 400-year / 146,097-day cycle. Include each used TZif zone's future-rule footer in the recurrence
+      fingerprint: after explicit transitions, use its recurring POSIX rule, or its final offset if no footer rule exists. It is acceptable
+      to parse TZif recurrence metadata to establish the cycle, but use `zoneinfo` for actual conversions. Only use a cycle as proof
+      after finite exceptions/tails end and timezone recurrence fingerprints align. Search one complete combined recurrence cycle
+      for real changes; if none occur, conclude there is no future change in the representable datetime domain.
+- [ ] No arbitrary horizon and no second-by-second or date-by-date brute-force scan. Python `datetime` represents years 1–9999;
+      search until the next real change is found or the recurrence proof establishes none remains. If none remains, empty stdout,
+      exit 0.
 
 **Acceptance:** all `--next-change` columns of V1–V8 and the no-future-change cases pass; V13 brute-force oracle agrees; V14 DST/bare-time boundary tests pass. A 100-line config with a leap-day state (`Feb 29`) completes in under 5 s without scanning every second or every date. Include a case where overlapping same-name intervals create candidate boundaries but no reported state change.
 
