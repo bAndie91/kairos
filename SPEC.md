@@ -29,10 +29,10 @@ author: i stroke through what i don't want (most your decisions i agree with) an
 | D10 | Dependencies | stdlib (`datetime`, `zoneinfo`) + `python-dateutil` (`relativedelta`) + `tzlocal` (local zone discovery) + system `tzdata`. (§12) | ~~stdlib only (hand-rolled local-zone discovery)~~ |
 | D11 | Names | Script `kairos` (no `.py`); config `$XDG_CONFIG_HOME/kairos/intervals.conf`. (§3) | | agreed |
 | D12 | `--config PATH` that does not exist | Error (exit 2); the default file is created only when **no** config is specified and none is found. (§3.2) | ~~Create it at PATH~~ |
-| D13 | `--next-change` with nothing ahead | ~~Looks ahead at most 10 years (`--horizon`); prints nothing and exits 1 if there is no change.~~ (§10) | | look ahead indefinitely. print nothing if there is really nothing ahead. but do look ahead in the future completely. don't add `--horizont` option. be clever how to look ahead so no need to check "every date up to ethernity" obviously. |
+| D13 | `--next-change` with nothing ahead | No arbitrary horizon; print nothing and exit 0 if no future change exists. (§10) | ~~A fixed horizon and exit 1~~ | Search candidate boundaries, then prove exhaustion using the finite Gregorian recurrence cycle after all finite exceptions and duration tails. Include the future recurrence rules of the active TZif zones; don't scan every second/date to eternity. |
 
 **Additions beyond your brief** (strike any you do not want): options `--at`, `--tz`, `--format`,
-`--check`, `--print-default-config`, `--horizon`, `--cmd-timeout`, `--version`; env var
+`--check`, `--print-default-config`, `--version`; env var
 `KAIROS_NOW` for macro commands; bare time-point anchors in relative intervals
 (`08:00 + 2 hours`); KAIROS_compound NUM (`4 days 9 hours`); time-of-day in `--` spans.
 
@@ -321,7 +321,7 @@ unit     = second | minute | hour | day | week | month | year ;   (* optional pl
   `08:00-16:00` is active at 08:00:00 and not at 16:00:00.
 * A clause is evaluated in its zone (§8): for every local calendar day that satisfies the day-level items, and every time range of the clause
   (default `00:00-24:00`), one range `[day+t1, day+t2)` is produced; if `t2 < t1` the end is on the following day (`t1 = t2` is an error). So the day selectors pick the  **starting** day (D2).
-* A bare time point (`08:00`) is really a 1 minute interval (missing units are like wildcards) ie. `08:00:*` or `08:00:00-08:00:59`. As an anchor of a relative interval, they are point-like instances.
+* Missing time units are wildcards within their natural ranges. Thus bare `08:00` means the half-open interval `[08:00:00, 08:01:00)`, exactly the same as `08:00-08:01`; it is active at `08:00:59` and not at `08:01:00`. A bare time point used as a relative-interval anchor is point-like: its instance start is `08:00:00`, not a one-minute-long anchor for purposes of `ANCHOR + DURATION`.
 * Without minutes, eg. `8h`, the whole hour is selected (`08:00-09:00`); without hours, eg. `30m`, `30min`, the whole minute is selected within eavery hour: `*:30`.
 * Wall-clock → instant conversion, DST gaps and folds follow PEP 495 as implemented by `zoneinfo` (nonexistent times use the offset before the transition, ambiguous  times take the first occurrence). Ranges that become empty are dropped. **No calendar or zone arithmetic is hand-written**: use `datetime`, `zoneinfo`, `dateutil.relativedelta`.
 * An interval spec denotes an infinite (possibly periodic) set; implementations evaluate it **per window** (§10) with this contract:
@@ -408,7 +408,20 @@ DURATION until ANCHOR        e.g.  40 days until Dec 24
 ## 10. `--next-change`
 
 A state ending at `T` while another line of the **same name** starts at `T` is no change; hidden (`@`) and STATE-less lines are never change points on their own;
-every change point is a range boundary of some `U(name)`.
+every change point is a range boundary of some `U(name)`. The reported state set is the union of all effective lines grouped by their reported name, so a candidate boundary is a real change only if that complete set differs immediately before and at the boundary.
+
+### 10.1 Candidate-boundary search and termination
+
+Do not sample every second or scan every date as the primary search algorithm. Generate the next possible boundary from the AST:
+
+* A clause yields local start/end boundaries from its matching dates and time ranges; jump directly to the next matching calendar date.
+* A span yields its endpoint boundaries. A relative interval yields the starts/ends after applying its duration to anchor-instance starts/ends. Preserve half-open, second-resolution semantics.
+* Merge candidate streams in chronological order. At each candidate instant `T`, compare the complete reported state set at `T-1 second` and `T`; return the first candidate where they differ. Boundaries hidden by adjacent/overlapping ranges or another line with the same state name are skipped.
+* Split expressions into finite exceptions and recurring parts. Explicit-year clauses/spans and relative intervals derived only from finite anchors contribute only finitely many candidate boundaries; account for their complete duration tails before treating them as finished. Recurring calendar clauses and spans repeat with the Gregorian 400-year cycle (146,097 days). Calendar-duration arithmetic repeats on that cycle as well. Do not assume a recurring anchor has finite tails; derive the boundary stream from its recurring instances.
+* For every IANA zone used, account for the TZif future-rule footer: after its last explicit transition, future transitions are either governed by its recurring POSIX rule or, when no footer rule is present, by its final offset. The recurrence fingerprint must include these transition rules and offsets, not just the Gregorian dates. The implementation may parse TZif recurrence metadata for this purpose, but must continue to use `zoneinfo` for actual wall-clock/instant conversion. A 400-year Gregorian cycle is a valid termination period only after all finite exceptions have ended and the time-zone recurrence fingerprints align.
+* Once beyond all finite exceptions/tails, search at most one complete combined recurrence cycle for a real state-set change. If no candidate changes the reported state set during that cycle, no later change exists in the representable datetime domain; return no result. Avoid a blind scan over every day of the cycle by using the candidate streams.
+
+Python's `datetime` domain is finite (years 1 through 9999). "Indefinitely" means no user-configurable horizon or arbitrary cut-off: search until a change is found or the recurrence proof shows none remains, bounded only by the representable datetime domain. If no future change exists, print nothing and exit 0.
 
 Output is formatted in the display zone with `--format`. During a DST fold the default format is ambiguous: show warning.
 
@@ -510,6 +523,19 @@ at 2026-02-10 → `first quarter`. Whole-word rule: `mary := Mon` followed by `a
 **V12** each of these is an error (exit 2, empty stdout): `08:00-25:00 = x`; `Mon Tue = x`; `Foo = x`; `Mon = ~` (top level); `  Mon = x` as the first line; `Mon := x`; `7 := x`; `Q := Jan` twice; `Feb 30 = x`; `2026-02-29 = x`; `Mon =`; `= x`; `X := ! false`; `08:00-08:00 = x`; unknown zone `Mon Foo/Bar = x`.
 
 **V13** brute-force oracle (property test): for each config above and random `at` values, `--next-change` equals the first `t' > at` found by stepping one second (or one minute when the config has no seconds) at which the printed state set differs.
+
+**V14** DST endpoint semantics and crossing ranges (all times below are UTC instants; use `Europe/Budapest` as the interval zone and evaluate exact boundaries with `--at`):
+
+- Spring gap, 2026-03-29 (02:00 local does not exist; transition 01:00 UTC):
+  - `02:00-03:00 = gap` is empty for that date because 02:00 resolves with the pre-transition UTC+1 offset to the same instant as 03:00 with UTC+2. It is not active at 2026-03-29 00:59:59 UTC or 01:00:00 UTC.
+  - `01:00-04:00 = crossing` is active at 2026-03-29 00:30:00 UTC and 01:30:00 UTC, and inactive at 02:00:00 UTC (the interval is `[00:00,02:00)` UTC).
+  - `Mon-Fri 08:00-16:00 = work`: verify the local wall-clock window remains 08:00–16:00 across the transition, while its UTC boundaries move from 07:00/15:00 before DST to 06:00/14:00 after DST.
+- Fall fold, 2026-10-25 (02:00 local occurs twice; transition 01:00 UTC):
+  - `02:00-03:00 = fold` spans `[00:00,02:00)` UTC: active at 00:30:00 and 01:30:00 UTC, inactive at 02:00:00 UTC.
+  - `01:00-04:00 = crossing` spans `[2026-10-24 23:00:00, 2026-10-25 03:00:00)` UTC: active at 00:30:00, 01:30:00, and 02:30:00 UTC, inactive at 03:00:00 UTC.
+  - `Mon-Fri 08:00-16:00 = work`: verify local wall-clock endpoints remain 08:00–16:00 and that UTC boundaries are one hour later than in summer after the fall-back.
+
+Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` begins at 10:00:00.
 
 ---
 
