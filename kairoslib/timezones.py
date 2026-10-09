@@ -5,7 +5,7 @@ offsets, and UTC/GMT/Z. Bare alphabetic abbreviations such as CST and CEST are
 intentionally rejected because they are not globally unique identifiers.
 
 To inspect available zone IDs:
-    python3 -c 'from zoneinfo import available_timezones; print("\\n".join(sorted(available_timezones()))'
+    python3 -c 'from zoneinfo import available_timezones; print("\\n".join(sorted(available_timezones())))'
 To inspect the abbreviation in effect for a chosen zone and instant:
     python3 -c 'from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime(2026, 7, 1, tzinfo=ZoneInfo("Europe/Berlin")).tzname())'
 
@@ -14,7 +14,7 @@ when available as a fallback. Kairos does not maintain an abbreviation map.
 """
 from __future__ import annotations
 
-from datetime import timedelta, timezone, tzinfo
+from datetime import datetime, timedelta, timezone, tzinfo
 import os
 import re
 import sys
@@ -24,10 +24,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 from .errors import IntervalKeeperError
 
 
-_OFFSET_RE = re.compile(r"^(?:UTC|GMT)([+-])(\\d{1,2})(?::?(\\d{2}))?$", re.IGNORECASE)
+_OFFSET_RE = re.compile(r"^(?:UTC|GMT)([+-])(\d{1,2})(?::?(\d{2}))?$", re.IGNORECASE)
 
 
-def resolve_tz(token: str, *, when=None, stderr: TextIO | None = None) -> tzinfo:
+def resolve_tz(token: str, *, when: datetime | None = None, stderr: TextIO | None = None) -> tzinfo:
     """Resolve an accepted time-zone token or raise a user-facing error."""
     raw = token.strip()
     if not raw:
