@@ -65,6 +65,12 @@ class ReaderTests(unittest.TestCase):
         with self.assertRaises(IntervalKeeperError):
             read_config("Mon = @\n")
 
+    def test_independent_line_errors_are_aggregated(self) -> None:
+        from kairoslib.reader import ReaderErrors
+        with self.assertRaises(ReaderErrors) as caught:
+            read_config("Mon =\nFoo = state\n")
+        self.assertGreaterEqual(len(caught.exception.errors), 2)
+
     def test_unknown_escape_is_error(self) -> None:
         with self.assertRaises(IntervalKeeperError):
             read_config(r"Mon = \q" + "\n")
