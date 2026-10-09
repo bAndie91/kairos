@@ -71,7 +71,7 @@ kairos [OPTIONS]
 ### 2.1 Output
 
 * Default mode: one active state per line on stdout, in config order (§7.4), each name once. No active state → no output, exit 0.
-* `--next-change`: a single line with the datetime in the display zone, e.g. `2026-10-09 12:00:00`.
+* `--next-change`: a single line with the datetime in the display zone, e.g. `2026-10-09 12:00:00`; if no future change exists, empty stdout and exit 0.
 * **stdout hygiene:** the config is parsed completely before anything is printed. On any error stdout stays empty.
   Diagnostics go to stderr.
 
@@ -323,7 +323,7 @@ unit     = second | minute | hour | day | week | month | year ;   (* optional pl
   (default `00:00-24:00`), one range `[day+t1, day+t2)` is produced; if `t2 < t1` the end is on the following day (`t1 = t2` is an error). So the day selectors pick the  **starting** day (D2).
 * Missing time units are wildcards within their natural ranges. Thus bare `08:00` means the half-open interval `[08:00:00, 08:01:00)`, exactly the same as `08:00-08:01`; it is active at `08:00:59` and not at `08:01:00`. A bare time point used as a relative-interval anchor is point-like: its instance start is `08:00:00`, not a one-minute-long anchor for purposes of `ANCHOR + DURATION`.
 * Without minutes, eg. `8h`, the whole hour is selected (`08:00-09:00`); without hours, eg. `30m`, `30min`, the whole minute is selected within eavery hour: `*:30`.
-* Wall-clock → instant conversion, DST gaps and folds follow PEP 495 as implemented by `zoneinfo` (nonexistent times use the offset before the transition, ambiguous  times take the first occurrence). Ranges that become empty are dropped. **No calendar or zone arithmetic is hand-written**: use `datetime`, `zoneinfo`, `dateutil.relativedelta`.
+* Wall-clock → instant conversion, DST gaps and folds follow PEP 495 as implemented by `zoneinfo`: a nonexistent local endpoint uses the offset before the transition; an ambiguous endpoint uses the first occurrence (`fold=0`). Resolve each endpoint independently, then form the half-open UTC interval; ranges that become empty are dropped. This means a spring-gap range `02:00-03:00` in `Europe/Budapest` on 2026-03-29 is empty, while the fall-fold range `02:00-03:00` on 2026-10-25 spans both occurrences of local 02:00 and ends at 03:00 standard time. See V14 for mandatory boundary tests. **No calendar or zone arithmetic is hand-written**: use `datetime`, `zoneinfo`, `dateutil.relativedelta`.
 * An interval spec denotes an infinite (possibly periodic) set; implementations evaluate it **per window** (§10) with this contract:
   `eval(spec, lo, hi)` returns exactly `spec ∩ [lo, hi)`.
 
