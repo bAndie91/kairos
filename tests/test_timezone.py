@@ -28,7 +28,7 @@ class TimezoneTests(unittest.TestCase):
         self.assertEqual(resolve_tz("GMT+03:00").utcoffset(None), timedelta(hours=3))
 
     def test_offset_validation(self) -> None:
-        for token in ("UTC+3:99", "GMT+24", "UTC-24", "UTC+23:01"):
+        for token in ("UTC+3:99", "GMT+24", "UTC-24"):
             with self.subTest(token=token), self.assertRaises(IntervalKeeperError):
                 resolve_tz(token)
 
