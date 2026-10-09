@@ -90,23 +90,23 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M1 — Config discovery and default config (SPEC §3)
 
-- [ ] XDG lookup: `--config`, `$XDG_CONFIG_HOME`, `$XDG_CONFIG_DIRS`; ignore relative XDG paths; `--config -` reads stdin.
-- [ ] Create the default file when nothing found and no `--config` given (dir 0700 if created, file 0644); notice on stderr; missing explicit `--config` → error without creating anything.
-- [ ] Default config text as a module constant in `kairoslib/defaults.py`, emitted by `--print-default-config`. Include the complete user-facing explanation,
+- [x] XDG lookup: `--config`, `$XDG_CONFIG_HOME`, `$XDG_CONFIG_DIRS`; ignore relative XDG paths; `--config -` reads stdin.
+- [x] Create the default file when nothing found and no `--config` given (dir 0700 if created, file 0644); notice on stderr; missing explicit `--config` → error without creating anything.
+- [x] Default config text as a module constant in `kairoslib/defaults.py`, emitted by `--print-default-config`. Include the complete user-facing explanation,
       condensed format specification, and examples required by SPEC §3.3; comment every line so a fresh config is inert.
       Keep the final text task in M9, using a marker-only placeholder until then.
-- [ ] Tests with a temporary `HOME` / `XDG_*` environment: precedence order, creation, no creation for explicit path, relative XDG vars ignored.
+- [x] Tests with a temporary `HOME` / `XDG_*` environment: precedence order, creation, no creation for explicit path, relative XDG vars ignored.
 
 **Acceptance:** all lookup/creation cases tested; running with a fresh empty `HOME` creates the file and prints no states.
 
 ### M2 — Line reader and indentation tree (SPEC §4)
 
-- [ ] Tokenise the file into logical lines: skip blank and `#` lines; allow indentation made of spaces or tabs, but reject indentation
+- [x] Tokenise the file into logical lines: skip blank and `#` lines; allow indentation made of spaces or tabs, but reject indentation
       that mixes spaces and tabs; reject an indented first line; use a Python-style indentation stack with a "dedent to an open level" check.
-- [ ] Classify lines: macro definition (`NAME := …`, checked first) vs interval line. Split interval line at the first `=`; detect leading `!`; error on empty INTERVAL / empty STATE.
-- [ ] Macro lines cannot have children.
-- [ ] STATE processing: escapes (`\~`, `\@`, `\\`, others error), `@` hidden marker (bare `@` → error), and `~` substitution against the nearest ancestor with a STATE; error if no such ancestor exists (D7). Produce `effective_name` and `reported` flags.
-- [ ] Build a tree of nodes `{lineno, indent, negated, interval_text, state_raw, children}`, keep macro lines in the sequence in file order.
+- [x] Classify lines: macro definition (`NAME := …`, checked first) vs interval line. Split interval line at the first `=`; detect leading `!`; error on empty INTERVAL / empty STATE.
+- [x] Macro lines cannot have children.
+- [x] STATE processing: escapes (`\~`, `\@`, `\\`, others error), `@` hidden marker (bare `@` → error), and `~` substitution against the nearest ancestor with a STATE; error if no such ancestor exists (D7). Produce `effective_name` and `reported` flags.
+- [x] Build a tree of nodes `{lineno, indent, negated, interval_text, state_raw, children}`, keep macro lines in the sequence in file order.
 
 **Acceptance:** unit tests for indentation errors (V12 items on indentation), `=` splitting, `~`/`@` rules (V5 names only, without time evaluation).
 
@@ -126,11 +126,11 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M4 — Time zones (SPEC §8)
 
-- [ ] Implement `resolve_tz(token)` using `zoneinfo.available_timezones()` and `ZoneInfo`: IANA IDs are case-insensitive; support `UTC`, `GMT`, `Z`, and `UTC±H[H][[:]MM]` / `GMT±…` numeric offsets with ISO sign convention.
-- [ ] Do not maintain an application-owned abbreviation-to-zone map. Reject bare alphabetic abbreviations other than UTC/GMT (for example `CST`, `CEST`) with a clear error; abbreviations may be displayed only as labels produced by the selected zone's rules for a specific instant.
-- [ ] Default zone precedence: explicit `--tz`, then `$TZ`, then `tzlocal` system-zone discovery; fall back to UTC with a stderr warning if discovery fails.
-- [ ] Document the IANA database source and provide practical commands to list available IDs and inspect the abbreviation produced for a chosen zone and instant.
-- [ ] Tests: `UTC+0300` is east of Greenwich; offset validation; `Etc/UTC`; `Europe/Budapest`; case-insensitive IDs; bare `CEST`/`CST` rejected; unknown IDs error; default-zone precedence/fallback.
+- [x] Implement `resolve_tz(token)` using `zoneinfo.available_timezones()` and `ZoneInfo`: IANA IDs are case-insensitive; support `UTC`, `GMT`, `Z`, and `UTC±H[H][[:]MM]` / `GMT±…` numeric offsets with ISO sign convention.
+- [x] Do not maintain an application-owned abbreviation-to-zone map. Reject bare alphabetic abbreviations other than UTC/GMT (for example `CST`, `CEST`) with a clear error; abbreviations may be displayed only as labels produced by the selected zone's rules for a specific instant.
+- [x] Default zone precedence: explicit `--tz`, then `$TZ`, then `tzlocal` system-zone discovery; fall back to UTC with a stderr warning if discovery fails.
+- [x] Document the IANA database source and provide practical commands to list available IDs and inspect the abbreviation produced for a chosen zone and instant.
+- [x] Tests: `UTC+0300` is east of Greenwich; offset validation; `Etc/UTC`; `Europe/Budapest`; case-insensitive IDs; bare `CEST`/`CST` rejected; unknown IDs error; default-zone precedence/fallback.
 
 **Acceptance:** M4 tests confirm zone objects and offsets on specific dates, and no abbreviation mapping remains in application code.
 
@@ -240,9 +240,11 @@ This milestone can draft prose and README material during M6, but executable-exa
 - D10: Dependencies are stdlib, `python-dateutil`, `tzlocal`, and system `tzdata`.
 - D11: Executable is `kairos`; config is `$XDG_CONFIG_HOME/kairos/intervals.conf`.
 - D12: A missing explicitly named config is an error and is never created.
+- D14: Alphabetic tokens that are legacy IANA zone IDs (`CET`, `EET`, `EST`, …) resolve as those zones; other bare abbreviations (`CST`, `CEST`, `IST`) are rejected. See SPEC §8.1.
 - D13: `--next-change` searches indefinitely without a `--horizon` option; if there truly is no future change, print nothing.
 
 ### Open questions to resolve explicitly before or during implementation
 
 - [x] SPEC §8: Cite IANA TZDB and Python `zoneinfo`; explain that zone abbreviations are zone/date-dependent labels, not unique IDs; add local commands for listing IANA zone IDs and inspecting an abbreviation at an instant.
+- [x] SPEC §8.1: legacy IANA IDs that look like abbreviations (`CET`, `EET`, `WET`, `MET`, `EST`, `MST`, `HST`, `PST8PDT`) conflict with "reject bare abbreviations". Resolved: the IANA ID lookup comes first, so those IDs are accepted as zones; only alphabetic names absent from `available_timezones()` are rejected (D14).
 - [ ] Validate the V14 transition expectations against the actual `zoneinfo` behavior on supported Python versions and make any discrepancy an explicit spec decision, not an undocumented implementation adjustment.
