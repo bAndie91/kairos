@@ -36,6 +36,17 @@ class MacroLine:
 ConfigEntry = Node | MacroLine
 
 
+class ReaderErrors(IntervalKeeperError):
+    """Aggregate independent line diagnostics while remaining CLI-compatible."""
+
+    def __init__(self, errors: list[IntervalKeeperError]) -> None:
+        if not errors:
+            raise ValueError("ReaderErrors requires at least one diagnostic")
+        first = errors[0]
+        super().__init__(first.path, first.line, first.message)
+        self.errors = tuple(errors)
+
+
 def _error(path: str | None, line: int, message: str) -> IntervalKeeperError:
     return IntervalKeeperError(path, line, message)
 
@@ -211,10 +222,7 @@ def read_config(text: str, path: str | None = None) -> list[ConfigEntry]:
         previous_entry = entry
 
     if errors:
-        # Preserve the required stderr-only, multi-error behaviour at the CLI layer.
-        # The exception carries the first error; callers needing all diagnostics can
-        # use the collected helper below.
-        raise errors[0]
+        raise ReaderErrors(errors)
     return roots
 
 
