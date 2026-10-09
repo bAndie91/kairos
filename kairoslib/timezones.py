@@ -41,7 +41,7 @@ def resolve_tz(token: str, *, when: datetime | None = None, stderr: TextIO | Non
         sign, hour_text, minute_text = match.groups()
         hours = int(hour_text)
         minutes = int(minute_text or "0")
-        if minutes > 59 or hours > 23 or (hours == 23 and minutes != 0):
+        if minutes > 59 or hours > 23:
             raise IntervalKeeperError(None, None, f"invalid time-zone offset {raw!r}")
         seconds = (hours * 60 + minutes) * 60
         if sign == "-":
