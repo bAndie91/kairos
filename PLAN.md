@@ -75,7 +75,7 @@ Each milestone ends with a green `make test` and a commit.
       that mixes spaces and tabs; reject an indented first line; use a Python-style indentation stack with a "dedent to an open level" check.
 - [ ] Classify lines: macro definition (`NAME := …`, checked first) vs interval line. Split interval line at the first `=`; detect leading `!`; error on empty INTERVAL / empty STATE.
 - [ ] Macro lines cannot have children.
-- [ ] STATE processing: escapes (`\~`, `\@`, `\\`, others error), `@` hidden marker (bare `@` → error), `~` substitution against the parent's effective name (errors per D7). Produce `effective_name`, `reported` flags.
+- [ ] STATE processing: escapes (`\~`, `\@`, `\\`, others error), `@` hidden marker (bare `@` → error), and `~` substitution against the nearest ancestor with a STATE; error if no such ancestor exists (D7). Produce `effective_name` and `reported` flags.
 - [ ] Build a tree of nodes `{lineno, indent, negated, interval_text, state_raw, children}`, keep macro lines in the sequence in file order.
 
 **Acceptance:** unit tests for indentation errors (V12 items on indentation), `=` splitting, `~`/`@` rules (V5 names only, without time evaluation).
@@ -123,7 +123,7 @@ Each milestone ends with a green `make test` and a commit.
   - `Clause`: iterate local dates of the clause's zone from `lo − 1 day` to `hi + 1 day` (using `datetime.date`), test the day-level items, emit ranges per time range, localize with `zoneinfo`, clip.
   - `Span`: iterate candidate years (recurring) or the single explicit year; endpoints via `datetime`; skip years where an endpoint does not exist.
   - `Union`: union of terms.
-  - `RelPlus` / `RelUntil`: evaluate anchor over a widened window, take instance starts/ends, add/subtract the duration with `relativedelta` (calendar units) and UTC arithmetic (elapsed units); widen until the first instance in the window is complete; clip.
+  - `RelPlus` / `RelUntil`: evaluate anchor over a widened window, take instance starts/ends, and apply duration pairs in the specified order: all calendar units (day/week/month/year) first via `relativedelta`, then elapsed units (hour/minute/second) in UTC. Widen until the first instance in the window is complete; clip.
 - [ ] DST tests: gap and fold days in `Europe/Budapest` (2026-03-29, 2026-10-25) — `02:00-03:00`, `01:00-04:00`, `Mon-Fri 08:00-16:00` across the switch.
 
 **Acceptance:** evaluation tests for V1, V2, V3, V7, V8, V9 interval texts on single lines (no hierarchy yet).
