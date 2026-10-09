@@ -1,6 +1,6 @@
 # kairos — execution plan
 
-Status: **DRAFT 0.1 — for review.** Companion to `SPEC.md`, which is the source of truth for behaviour.
+Status: **DRAFT 0.1 — in progress, M0/M1/M2/M3/M4 accepted. M5 intentionally deferred.** Companion to `SPEC.md`, which is the source of truth for behaviour.
 This plan is written so that an agent with no other context can pick it up and continue.
 
 ## 0. How to use this plan (read first)
@@ -80,11 +80,11 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M0 — Skeleton and test harness
 
-- [ ] Create the thin root `kairos` launcher and `kairoslib/` package skeleton (`__init__.py`, `cli.py`, `errors.py`); the launcher imports and calls `kairoslib.cli:main`. Add `argparse` for **all** options in SPEC §2 (unimplemented ones may raise "not implemented" → exit 2).
-- [ ] Define `IntervalKeeperError` in `kairoslib/errors.py`, carrying `(path, line, message)`; the top-level handler in `cli.py` prints `kairos: PATH:LINE: error: MESSAGE` and exits 2. Nothing else may print to stdout before success.
-- [ ] `tests/helpers.py`: package import helpers (no `SourceFileLoader` for a monolithic script); `run_cli(args, config_text=None, env=None)` returning `(code, stdout, stderr)` (feeds config through `--config -`); a fake `ncal` executable in a temp dir prepended to `PATH`
+- [x] Create the thin root `kairos` launcher and `kairoslib/` package skeleton (`__init__.py`, `cli.py`, `errors.py`); the launcher imports and calls `kairoslib.cli:main`. Add `argparse` for **all** options in SPEC §2 (unimplemented ones may raise "not implemented" → exit 2).
+- [x] Define `IntervalKeeperError` in `kairoslib/errors.py`, carrying `(path, line, message)`; the top-level handler in `cli.py` prints `kairos: PATH:LINE: error: MESSAGE` and exits 2. Nothing else may print to stdout before success.
+- [x] `tests/helpers.py`: package import helpers (no `SourceFileLoader` for a monolithic script); `run_cli(args, config_text=None, env=None)` returning `(code, stdout, stderr)` (feeds config through `--config -`); a fake `ncal` executable in a temp dir prepended to `PATH`
       that prints `04/05/26`.
-- [ ] `Makefile` with `test` target.
+- [x] `Makefile` with `test` target.
 
 **Acceptance:** `kairos --help` and `--version` work from a clean source checkout without installation or `PYTHONPATH`; package modules import independently; a trivial test runs; an unknown option exits 2 with empty stdout.
 
@@ -112,15 +112,17 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M3 — Macros (SPEC §5)
 
-- [ ] Name validation: pattern, reserved words (months, weekdays, units, `until`, `UTC`/`GMT`/`Z`, and the agreed timezone-token rules), redefinition against **visible** macros. Consume the shared constant/interface agreed with M4; do not duplicate the table.
-- [ ] Scope stack tied to the indentation tree; sibling subtrees may reuse names.
-- [ ] Whole-word, single-pass expansion on raw text, for both INTERVAL and STRING values; resolve command macros lazily on first use.
-- [ ] Command macros: run `${SHELL:-/bin/sh} -c COMMAND`, stdin `/dev/null`, stderr inherited; non-zero exit is an error.
+- [x] Name validation: pattern, reserved words (months, weekdays, units, `until`, `UTC`/`GMT`/`Z`, and the agreed timezone-token rules), redefinition against **visible** macros. Consume the shared constant/interface agreed with M4; do not duplicate the table.
+- [x] Scope stack tied to the indentation tree; sibling subtrees may reuse names.
+- [x] Whole-word, single-pass expansion on raw text, for both INTERVAL and STRING values; resolve command macros lazily on first use.
+- [x] Command macros: run `${SHELL:-/bin/sh} -c COMMAND`, stdin `/dev/null`, stderr inherited; non-zero exit is an error.
       Pass inherited environment plus resolved visible macros as `KAIROS_MACRO_<NAME>`, `KAIROS_NOW` as ISO 8601 with offset,
       and contextual `KAIROS_INTERVAL_<LEVEL>` / `KAIROS_STATE_<LEVEL>` for each ancestor and the current line (levels start at 0).
       Strip trailing newlines and collapse embedded newlines to spaces. Empty output is valid. Do not add an unspecified timeout.
-- [ ] Pruning hook for default mode (SPEC §5.4): the parser asks a callback `parent_active(node)`; when false the subtree is structurally validated only where it depends on skipped commands. `--next-change` and `--check` pass a callback that always returns true.
+- [x] Pruning hook for default mode (SPEC §5.4): the parser asks a callback `parent_active(node)`; when false the subtree is structurally validated only where it depends on skipped commands. `--next-change` and `--check` pass a callback that always returns true.
       (The callback is implemented in M7; use a stub returning true until then.)
+
+Completed in this branch without selecting M5; verification: `python3 -m unittest discover -s tests -v` passes with the macro tests included.
 
 **Acceptance:** the macro parts of V10 and V12, including: `annamary` not substituted, env vars visible to commands (use `env`/`printenv` in tests), command not run when pruned (marker file), run under `--check`.
 
