@@ -51,7 +51,7 @@ Implementation units live in separate `kairoslib/` modules to reduce merge confl
 - The integrator creates one branch/worktree per agent from the same current `master`. Agents must not push directly to `master`, rewrite another agent's branch, or edit `PLAN.md` checkboxes.
 - Give each agent a narrow deliverable: named milestone(s), owned `kairoslib/*.py` module(s), and its own test module(s). Avoid overlapping file ownership. Code branches are integration-ready proposals, not permission to merge blindly. The launcher, shared errors/interfaces, package exports, `Makefile`, and `PLAN.md` are integrator-owned unless explicitly delegated.
 - Test-file ownership should be disjoint: for example, `test_config.py`, `test_reader.py`, `test_macros.py`, `test_timezone.py`, `test_parser.py`, `test_ranges.py`, and `test_next_change.py`. Shared helpers and `Makefile` belong to the integrator; agents request helper changes rather than editing them concurrently.
-- Agree on public function names, AST dataclasses, node fields, error representation, and the shared timezone-abbreviation/reserved-word constant before dependent work begins. Do not create parallel, incompatible interfaces. Put AST dataclasses in `parser.py` initially; if a separate `ast.py` becomes necessary, the integrator makes that change once and updates the import contract.
+- Agree on public function names, AST dataclasses, node fields, error representation, and the shared timezone-token/reserved-word contract before dependent work begins. Do not create parallel, incompatible interfaces. Put AST dataclasses in `parser.py` initially; if a separate `ast.py` becomes necessary, the integrator makes that change once and updates the import contract.
 - The integrator integrates one change to `kairos` at a time, rebases/cherry-picks as needed, runs affected tests, then the full `make test`. Resolve conflicts by preserving section ownership and the spec, not by choosing one branch wholesale. Update checkboxes only after integration and acceptance.
 - If an agent discovers a spec ambiguity, pause only the affected dependency chain; unrelated tasks may continue. Record the question here and make any behavioural change in a separate `spec:` commit.
 
@@ -112,7 +112,7 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M3 — Macros (SPEC §5)
 
-- [ ] Name validation: pattern, reserved words (months, weekdays, units, `until`, `UTC`/`GMT`/`Z`, and the reserved timezone tokens (UTC/GMT/Z)), redefinition against **visible** macros. Consume the shared constant/interface agreed with M4; do not duplicate the table.
+- [ ] Name validation: pattern, reserved words (months, weekdays, units, `until`, `UTC`/`GMT`/`Z`, and the agreed timezone-token rules), redefinition against **visible** macros. Consume the shared constant/interface agreed with M4; do not duplicate the table.
 - [ ] Scope stack tied to the indentation tree; sibling subtrees may reuse names.
 - [ ] Whole-word, single-pass expansion on raw text, for both INTERVAL and STRING values; resolve command macros lazily on first use.
 - [ ] Command macros: run `${SHELL:-/bin/sh} -c COMMAND`, stdin `/dev/null`, stderr inherited; non-zero exit is an error.
@@ -136,7 +136,7 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M5 — Interval lexer and parser → AST (SPEC §6)
 
-- [ ] Lexer with the token order of §6.1 (ISO date before number, `--` before `-`, TZ forms, words). Use the M4 timezone token/reserved-name interface; the parser does not resolve zone objects.
+- [ ] Lexer with the token order of §6.1 (ISO date before number, `--` before `-`, supported TZ forms, words). Use the M4 timezone-token/reserved-name interface; the parser does not resolve zone objects. Alphabetic timezone abbreviations other than `UTC`/`GMT` are not TZ tokens.
 - [ ] Item kinds and ranges, number classification (< 100 DOM, ≥ 100 YEAR), month/weekday names (full, 3-letter, `Sept`, case-insensitive).
 - [ ] Clause conjunction rules and all clause errors (duplicate kind, DATE vs Y/M/D, impossible dates incl. `Feb 30`, `2026-02-29`, `*-04-31`; `Feb 29` ok).
 - [ ] Comma grouping rule D3 (same-kind continuation) producing terms.
@@ -213,7 +213,7 @@ This milestone can draft prose and README material during M6, but executable-exa
 |------|-----------|
 | Relative intervals whose anchor starts long before the window | Widen look-back until the first relevant anchor instance is complete; test long durations and anchors with recurring and explicit years. |
 | Adjacent ranges across midnight or DST must merge or `--next-change` reports false changes | Merge in `RangeSet`; oracle test (V13) |
-| Zone names / abbreviations colliding with macro or month/weekday words | Lexer order and reserved-name list share one constant table |
+| Zone IDs / timezone tokens colliding with macro or month/weekday words | Lexer order and reserved-name rules are explicit; no abbreviation-to-zone table exists |
 | Macro text substitution altering zone names | Spec'd limitation (§5.2); do not "fix" silently |
 | `ncal -e` output is locale-dependent | Never rely on it in tests; use the fake `ncal` and `date -d` wrapper |
 
@@ -236,7 +236,7 @@ This milestone can draft prose and README material during M6, but executable-exa
 - D6: `D until ANCHOR` includes the entire anchor instance, including the all-day end date.
 - D7: `~` inherits from the nearest ancestor with a STATE; error if none exists.
 - D8: A macro redefinition fails when the name is visible in the current/enclosing scope; sibling scopes may reuse names.
-- D9: Use the specified representative IANA zones for abbreviations; document the table source and local zone-listing/search method.
+- D9: The `CEST → Europe/Berlin` and similar mappings were examples, not requirements. Use IANA TZDB for zone rules and returned abbreviations; do not map bare abbreviations to representative zones. Bare alphabetic abbreviations other than `UTC`/`GMT` are rejected as input because no globally unique abbreviation-to-zone registry exists.
 - D10: Dependencies are stdlib, `python-dateutil`, `tzlocal`, and system `tzdata`.
 - D11: Executable is `kairos`; config is `$XDG_CONFIG_HOME/kairos/intervals.conf`.
 - D12: A missing explicitly named config is an error and is never created.
@@ -244,5 +244,5 @@ This milestone can draft prose and README material during M6, but executable-exa
 
 ### Open questions to resolve explicitly before or during implementation
 
-- [ ] SPEC §8.2: Add a source URL for the abbreviation mapping and a locally runnable way to list/search IANA zones; do not imply abbreviations are canonical IANA identifiers.
+- [x] SPEC §8: Cite IANA TZDB and Python `zoneinfo`; explain that zone abbreviations are zone/date-dependent labels, not unique IDs; add local commands for listing IANA zone IDs and inspecting an abbreviation at an instant.
 - [ ] Validate the V14 transition expectations against the actual `zoneinfo` behavior on supported Python versions and make any discrepancy an explicit spec decision, not an undocumented implementation adjustment.
