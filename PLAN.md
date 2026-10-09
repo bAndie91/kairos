@@ -34,7 +34,7 @@ This plan is written so that an agent with no other context can pick it up and c
 `kairos`          thin executable launcher importing `kairoslib.cli:main`
 kairoslib/        Python package with implementation modules (see SPEC §1.1)
 tests/
-  helpers.py               loads the script as a module; run() helper for the CLI; ncal stub
+  helpers.py               imports package modules; run() helper for the CLI; ncal stub
   test_*.py                unittest test modules (stdlib unittest; pytest also works)
   fixtures/                config files used by tests
 Makefile                   `make test` → python3 -m unittest discover -s tests -v
@@ -82,11 +82,11 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 - [ ] Create the thin root `kairos` launcher and `kairoslib/` package skeleton (`__init__.py`, `cli.py`, `errors.py`); the launcher imports and calls `kairoslib.cli:main`. Add `argparse` for **all** options in SPEC §2 (unimplemented ones may raise "not implemented" → exit 2).
 - [ ] Define `IntervalKeeperError` in `kairoslib/errors.py`, carrying `(path, line, message)`; the top-level handler in `cli.py` prints `kairos: PATH:LINE: error: MESSAGE` and exits 2. Nothing else may print to stdout before success.
-- [ ] `tests/helpers.py`: `load_module()` via `importlib.machinery.SourceFileLoader`; `run_cli(args, config_text=None, env=None)` returning `(code, stdout, stderr)` (feeds config through `--config -`); a fake `ncal` executable in a temp dir prepended to `PATH`
+- [ ] `tests/helpers.py`: package import helpers (no `SourceFileLoader` for a monolithic script); `run_cli(args, config_text=None, env=None)` returning `(code, stdout, stderr)` (feeds config through `--config -`); a fake `ncal` executable in a temp dir prepended to `PATH`
       that prints `04/05/26`.
 - [ ] `Makefile` with `test` target.
 
-**Acceptance:** `kairos --help` and `--version` work; a trivial test runs; an unknown option exits 2 with empty stdout.
+**Acceptance:** `kairos --help` and `--version` work from a clean source checkout without installation or `PYTHONPATH`; package modules import independently; a trivial test runs; an unknown option exits 2 with empty stdout.
 
 ### M1 — Config discovery and default config (SPEC §3)
 
@@ -222,7 +222,7 @@ This milestone can draft prose and README material during M6, but executable-exa
 * All milestones ticked; `make test` passes from a clean checkout on Python 3.9 and the newest available 3.x.
 * Every vector in SPEC §13 is covered by a test.
 * `kairos` with no config in a fresh environment creates the default file and exits 0 with no output.
-* No hand-written date arithmetic remains: grep the script for manual month-length tables, leap-year formulas, or `* 86400` style day arithmetic.
+* No hand-written date arithmetic remains: grep the package for manual month-length tables, leap-year formulas, or `* 86400` style day arithmetic.
 
 ## 7. Open questions (append here)
 
