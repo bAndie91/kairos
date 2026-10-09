@@ -21,6 +21,7 @@ class Node:
     children: list["Node"] = field(default_factory=list)
     effective_name: str | None = None
     reported: bool = False
+    parent: "Node | None" = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -96,7 +97,10 @@ def _decode_state(raw: str, parent: Node | None, path: str | None, lineno: int) 
         hidden = True
         chars = chars[j:]
 
-    parent_name = parent.effective_name if parent is not None and parent.state_raw is not None else None
+    ancestor = parent
+    while ancestor is not None and ancestor.state_raw is None:
+        ancestor = ancestor.parent
+    parent_name = ancestor.effective_name if ancestor is not None else None
     output: list[str] = []
     for char, escaped in chars:
         if char == "~" and not escaped:
@@ -166,12 +170,14 @@ def read_config(text: str, path: str | None = None) -> list[ConfigEntry]:
                 continue
             stack.append((previous_entry.indent, previous_entry))
 
-        while stack and indent <= stack[-1][0]:
-            stack.pop()
-        if stack and indent < stack[-1][0]:
+        previous_indent = previous_entry.indent if previous_entry is not None else 0
+        open_levels = {0, *(level for level, _node in stack)}
+        if indent < previous_indent and indent not in open_levels:
             errors.append(_error(path, lineno, "dedent does not match an open indentation level"))
             previous_entry = None
             continue
+        while stack and indent <= stack[-1][0]:
+            stack.pop()
 
         # If the previous interval was a child and this line dedents to a level
         # that was never opened, the stack-pop check above catches it by comparing
@@ -179,7 +185,7 @@ def read_config(text: str, path: str | None = None) -> list[ConfigEntry]:
         if stack:
             parent = stack[-1][1]
             if isinstance(entry, Node):
-                entry_parent = parent
+                entry.parent = parent
                 parent.children.append(entry)
                 if entry.state_raw is not None:
                     try:
