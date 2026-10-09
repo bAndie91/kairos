@@ -2,7 +2,7 @@
 
 Status: **DRAFT 0.1 — for review.** Nothing is implemented yet. See `PLAN.md` for the execution plan.
 
-`kairos` is a single-file Python 3 command-line tool for Linux: a **time-based arbitrary state registry**.
+`kairos` is a modular Python 3 command-line tool for Linux: a **time-based arbitrary state registry**. The command is a small executable launcher backed by a Python package; implementation units belong in separate modules as described in §1.1.
 A config file maps time intervals to free-text *state* names. Run the tool and it prints
 the states that are active right now. With `--next-change` it prints when that set of
 active states will next change.
@@ -50,6 +50,44 @@ sandboxing of macro commands.
 Document these OOS points.
 
 ---
+
+
+### 1.1 Implementation architecture
+
+The repository must use a modular Python package; **do not consolidate the implementation into one script**. Keep the user-facing command named `kairos` and preserve all CLI behaviour and config compatibility.
+
+Recommended layout:
+
+```text
+kairos                  executable launcher; delegates to kairoslib.cli:main
+kairoslib/
+  __init__.py
+  cli.py                argument parsing, orchestration, output and exit handling
+  errors.py             shared exception/error types and diagnostic formatting
+  config.py             XDG lookup, config loading/creation, default-config file I/O
+  defaults.py           default config text constant
+  reader.py             logical lines, indentation tree, STATE processing
+  macros.py             macro scope, expansion and command execution
+  timezones.py          zone resolution and abbreviation table
+  lexer.py              INTERVAL tokenization
+  parser.py             INTERVAL grammar and AST dataclasses
+  ranges.py             RangeSet algebra and half-open interval primitives
+  evaluate.py           AST-to-RangeSet evaluation and relative intervals
+  states.py             hierarchy semantics and reported-state unions
+  next_change.py        candidate boundaries and --next-change search
+tests/
+  helpers.py
+  test_*.py
+  fixtures/
+Makefile
+SPEC.md  PLAN.md  README.md
+```
+
+The launcher must work from a source checkout without requiring installation or a manually configured `PYTHONPATH`; it should add the repository root to the import path in a small, predictable way before importing `kairoslib.cli`. Keep it as a thin launcher with no business logic. The package must be importable by tests without invoking the CLI.
+
+Module responsibilities above are a default decomposition, not a requirement to create a separate module for every trivial helper. A module may be split further if that gives a unit clear ownership or reduces conflicts; avoid circular imports. Shared low-level types (`errors.py`, AST types in `parser.py`, and common interval/timezone contracts) must have one canonical definition. Keep dependencies flowing from low-level utilities toward higher-level orchestration; lower-level modules must not import `cli.py`.
+
+Do not use wildcard imports to assemble the package. Cross-module APIs should be explicit and documented with type hints where practical. Tests should import the owning module for unit tests and exercise the `kairos` launcher for CLI integration tests.
 
 ## 2. Command line
 
