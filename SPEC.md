@@ -475,7 +475,7 @@ bad indentation / first line indented; macro with children; unknown word;
 macro name reserved, or already visible; macro command failed; duplicate item kind in a clause;
 mixed-kind range; time range with equal ends; numbers out of range; `*` outside `ISODATE`; 
 span with lists/ranges, missing time on one side, end before start with explicit year; `~` without parent; empty INTERVAL;
-unknown time zone or unsupported abbreviation; bad `--at`/option values.
+unknown IANA zone ID, invalid offset, or unsupported alphabetic timezone abbreviation; bad `--at`/option values.
 
 ---
 
