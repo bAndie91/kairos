@@ -112,7 +112,7 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M3 — Macros (SPEC §5)
 
-- [ ] Name validation: pattern, reserved words (months, weekdays, units, `until`, `UTC`/`GMT`/`Z`, and the agreed timezone-abbreviation table), redefinition against **visible** macros. Consume the shared constant/interface agreed with M4; do not duplicate the table.
+- [ ] Name validation: pattern, reserved words (months, weekdays, units, `until`, `UTC`/`GMT`/`Z`, and the reserved timezone tokens (UTC/GMT/Z)), redefinition against **visible** macros. Consume the shared constant/interface agreed with M4; do not duplicate the table.
 - [ ] Scope stack tied to the indentation tree; sibling subtrees may reuse names.
 - [ ] Whole-word, single-pass expansion on raw text, for both INTERVAL and STRING values; resolve command macros lazily on first use.
 - [ ] Command macros: run `${SHELL:-/bin/sh} -c COMMAND`, stdin `/dev/null`, stderr inherited; non-zero exit is an error.
@@ -126,13 +126,13 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M4 — Time zones (SPEC §8)
 
-- [ ] `resolve_tz(token)`: IANA (case-insensitive lookup against `zoneinfo.available_timezones()`), `UTC±H[H][[:]MM]` / `GMT±…` with ISO sign (use `datetime.timezone(timedelta)`), the abbreviation table, `Z`. Unsupported abbreviations → error naming the token.
-- [ ] Default zone precedence: explicit `--tz`, then `$TZ`, then `tzlocal` system-zone discovery; fallback to UTC with a stderr warning.
-- [ ] Document the abbreviation table's source and provide a practical local command/example for listing or searching zone names from
-      the same `zoneinfo` database used by the program.
-- [ ] Tests: `CEST` in December behaves as `CET`; `UTC+0300` is east of Greenwich; `Etc/UTC`; `Europe/Budapest`; unknown names error.
+- [ ] Implement `resolve_tz(token)` using `zoneinfo.available_timezones()` and `ZoneInfo`: IANA IDs are case-insensitive; support `UTC`, `GMT`, `Z`, and `UTC±H[H][[:]MM]` / `GMT±…` numeric offsets with ISO sign convention.
+- [ ] Do not maintain an application-owned abbreviation-to-zone map. Reject bare alphabetic abbreviations other than UTC/GMT (for example `CST`, `CEST`) with a clear error; abbreviations may be displayed only as labels produced by the selected zone's rules for a specific instant.
+- [ ] Default zone precedence: explicit `--tz`, then `$TZ`, then `tzlocal` system-zone discovery; fall back to UTC with a stderr warning if discovery fails.
+- [ ] Document the IANA database source and provide practical commands to list available IDs and inspect the abbreviation produced for a chosen zone and instant.
+- [ ] Tests: `UTC+0300` is east of Greenwich; offset validation; `Etc/UTC`; `Europe/Budapest`; case-insensitive IDs; bare `CEST`/`CST` rejected; unknown IDs error; default-zone precedence/fallback.
 
-**Acceptance:** V9 resolution tests (zone objects and offsets on specific dates).
+**Acceptance:** M4 tests confirm zone objects and offsets on specific dates, and no abbreviation mapping remains in application code.
 
 ### M5 — Interval lexer and parser → AST (SPEC §6)
 
