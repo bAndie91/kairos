@@ -15,45 +15,45 @@ class TimezoneTests(unittest.TestCase):
         self.assertEqual(resolve_tz("europe/budapest"), ZoneInfo("Europe/Budapest"))
         self.assertEqual(resolve_tz("Etc/UTC"), ZoneInfo("Etc/UTC"))
 
+    def test_utc_aliases(self) -> None:
+        for token in ("UTC", "utc", "GMT", "gmt", "Z", "z"):
+            with self.subTest(token=token):
+                self.assertEqual(resolve_tz(token), timezone.utc)
+
     def test_utc_offset_uses_iso_sign(self) -> None:
         zone = resolve_tz("UTC+0300")
         self.assertEqual(datetime(2026, 10, 9, 8, tzinfo=zone).utcoffset(), timedelta(hours=3))
         self.assertEqual(datetime(2026, 10, 9, 8, tzinfo=resolve_tz("GMT-4:30")).utcoffset(), -timedelta(hours=4, minutes=30))
+        self.assertEqual(resolve_tz("UTC+3").utcoffset(None), timedelta(hours=3))
+        self.assertEqual(resolve_tz("GMT+03:00").utcoffset(None), timedelta(hours=3))
 
     def test_offset_validation(self) -> None:
-        for token in ("UTC+3:99", "GMT+24", "UTC-24"):
+        for token in ("UTC+3:99", "GMT+24", "UTC-24", "UTC+23:01"):
             with self.subTest(token=token), self.assertRaises(IntervalKeeperError):
                 resolve_tz(token)
 
-    def test_abbreviations_resolve_to_dst_zones(self) -> None:
-        berlin = resolve_tz("CEST")
-        self.assertEqual(berlin, ZoneInfo("Europe/Berlin"))
-        self.assertEqual(datetime(2026, 12, 1, tzinfo=berlin).utcoffset(), timedelta(hours=1))
-        self.assertEqual(datetime(2026, 7, 1, tzinfo=berlin).utcoffset(), timedelta(hours=2))
+    def test_bare_abbreviations_are_rejected(self) -> None:
+        for token in ("CEST", "CET", "CST", "IST", "EDT", "PST"):
+            with self.subTest(token=token), self.assertRaisesRegex(IntervalKeeperError, "unsupported alphabetic time-zone abbreviation"):
+                resolve_tz(token)
 
-    def test_misplaced_summer_abbreviation_warns_when_date_is_given(self) -> None:
-        stream = io.StringIO()
-        resolve_tz("CEST", when=datetime(2026, 12, 1), stderr=stream)
-        self.assertIn("warning", stream.getvalue())
-        self.assertIn("CET", stream.getvalue())
-
-    def test_unknown_ambiguous_abbreviation_errors(self) -> None:
-        with self.assertRaisesRegex(IntervalKeeperError, "unknown time zone"):
-            resolve_tz("IST")
+    def test_unknown_iana_zone_errors(self) -> None:
+        with self.assertRaisesRegex(IntervalKeeperError, "unknown IANA time-zone ID"):
+            resolve_tz("Foo/Bar")
 
     def test_default_precedence(self) -> None:
         zone = default_timezone("Europe/Budapest", env={"TZ": "UTC"})
         self.assertEqual(zone, ZoneInfo("Europe/Budapest"))
-        zone = default_timezone(env={"TZ": "UTC"})
-        self.assertEqual(zone, timezone.utc)
+        self.assertEqual(default_timezone(env={"TZ": "UTC"}), timezone.utc)
 
     def test_missing_system_zone_falls_back_with_warning(self) -> None:
         stream = io.StringIO()
         zone = default_timezone(env={}, stderr=stream)
-        self.assertEqual(zone, timezone.utc)
-        # If tzlocal is installed, the system zone is returned instead.
         if stream.getvalue():
+            self.assertEqual(zone, timezone.utc)
             self.assertIn("warning", stream.getvalue())
+        else:
+            self.assertIsNotNone(zone)
 
 
 if __name__ == "__main__":
