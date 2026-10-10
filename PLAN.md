@@ -112,14 +112,14 @@ Each milestone has focused acceptance checks. Run focused tests during developme
 
 ### M3 — Macros (SPEC §5)
 
-- [x] Name validation: pattern, reserved words (months, weekdays, units, `until`, `UTC`/`GMT`/`Z`, and the agreed timezone-token rules), redefinition against **visible** macros. Consume the shared constant/interface agreed with M4; do not duplicate the table.
+- [x] Name validation: SPEC §5.3 rules (any text; see M12), reserved words (a whole name equal to a locale month/weekday name, unit, `until`/`before`/`after`, `UTC`/`GMT`/`Z`, and the agreed timezone-token rules), redefinition against **visible** macros. Consume the shared constant/interface agreed with M4; do not duplicate the table.
 - [x] Scope stack tied to the indentation tree; sibling subtrees may reuse names.
 - [x] Whole-word, single-pass expansion on raw text, for both INTERVAL and STRING values; resolve command macros lazily on first use.
-- [x] Command macros: run `${SHELL:-/bin/sh} -c COMMAND`, stdin `/dev/null`, stderr inherited; non-zero exit is an error.
+- [x] Command macros: run `${SHELL:-/bin/sh} -c COMMAND`, stdin `/dev/null`, stderr inherited; non-zero exit is an error, raised when the command is evaluated (M12, D18).
       Pass inherited environment plus resolved visible macros as `KAIROS_MACRO_<NAME>`, `KAIROS_NOW` as ISO 8601 with offset,
       and contextual `KAIROS_INTERVAL_<LEVEL>` / `KAIROS_STATE_<LEVEL>` for each ancestor and the current line (levels start at 0).
       Strip trailing newlines and collapse embedded newlines to spaces. Empty output is valid. Do not add an unspecified timeout.
-- [x] Pruning hook for default mode (SPEC §5.4): the parser asks a callback `parent_active(node)`; when false the subtree is structurally validated only where it depends on skipped commands. `--next-change` and `--check` pass a callback that always returns true.
+- [x] Pruning hook for default mode (SPEC §5.4): the parser asks a callback `parent_active(node)`; when false the subtree is structurally validated only where it depends on skipped commands. `--next-change` and `--check` pass a callback that always returns true (a command macro that no line uses still never runs, D18).
       (The callback is implemented in M7; use a stub returning true until then.)
 
 Completed in this branch without selecting M5; verification: `python3 -m unittest discover -s tests -v` passes with the macro tests included.
@@ -243,11 +243,33 @@ Owner: lexer/parser/evaluate. Depends on M5, M6; M8 must keep working.
 
 Completed on the same branch (`RelShift` in `parser.py`, `_eval_shift` in `evaluate.py`, `tests/test_before_after.py`, plus the new forms in the window-independence property test and the V13 oracle). `before`/`after` are reserved words; a leading duration must be followed by `until`, `before` or `after`.
 
+### M12 — Macro names and evaluation-time command errors (SPEC §4.1, §5.2, §5.3, §5.4, D17, D18)
+
+Owner: reader/macros/states. Depends on M2, M3, M7.
+
+- [x] `NAME := VALUE`: NAME is the text before the first `:=`, trimmed, containing no `=` (`reader._split_macro`). Validity is `macros.validate_macro_name`: non-empty, no `=`, no leading `!`, at least one letter, not entirely a reserved word (`Mon morning` is fine).
+- [x] A name may start with, end with or contain another macro's name; only an identical name is a redefinition (D8).
+- [x] Expansion is a single regex pass, longest visible name first, whole-word boundary only on the sides where the name starts/ends with a word character (names with punctuation need none there); names match literally (inner whitespace, case).
+- [x] `KAIROS_MACRO_<NAME>`: every character outside `[A-Za-z0-9_]` becomes `_`; later definitions win when names collapse.
+- [x] D18: defining a command macro runs nothing; a failing command is an error at the macro's line when a non-skipped line first uses it. `--check` evaluates only the command macros some line uses. The command value is cached on the defining scope.
+- [x] Acceptance: V10 (Mary vectors), V12 (`7 := x`, `X := ! false` followed by a use), tests in `tests/test_macros.py`, `tests/test_states.py`, `tests/test_cli_states.py`.
+
+Interpretation choices: the "at least one letter" rule is mine (a name of only digits/punctuation would collide with numbers, times and `*`); a macro name with leading or trailing whitespace is impossible since NAME is trimmed.
+
+### M13 — Several parts in one INTERVAL (SPEC §6.4, §6.6, §9.2, D19, V17)
+
+Owner: parser/evaluate/next_change. Depends on M5, M6, M8, M11.
+
+- [x] Grammar: `interval = part {"," part}`; AST node `Combined(parts)` (a single part stays unwrapped). A comma followed by `NUMBER unit` ends the current union and never continues a day/year list (`Apr 1, 2 days before X` is two parts).
+- [x] The anchor of `D until|before|after ANCHOR` is a greedy union (it takes the plain terms that follow it); a `+` form ends at its duration, so `Mon + 2 days, Fri` is two parts. Term parsers no longer consume the trailing comma; `parse_union` and `parse_expr` do, with the `trailing ','` error.
+- [x] `evaluate`: union of the parts, each with its own zone choice and window handling. `next_change`: `_terms`/`finite_end` walk every part.
+- [x] Acceptance: V17 in `tests/test_unions.py` (parser shapes, errors, semantics, window independence, `--next-change`, CLI); the old test that forbade unions of relative forms was removed.
+
 ### M9 — Default config text, docs, polish
 
 This milestone can draft prose and README material during M6, but executable-example checks and final acceptance depend on M1 and M7 being integrated.
 
-- [ ] The default config text and docs describe `D before ANCHOR` / `D after ANCHOR` (SPEC §9.1) and that month/weekday names follow the `LC_TIME` locale (SPEC §11).
+- [ ] The default config text and docs describe `D before ANCHOR` / `D after ANCHOR` (SPEC §9.1), several parts in one INTERVAL (`Apr 1, 2 days before X`, SPEC §9.2), macro names with spaces and punctuation (SPEC §5.3) and that month/weekday names follow the `LC_TIME` locale (SPEC §11).
 - [ ] Write the final default config text (SPEC §3.3), including the brief's examples with the working `Easter` wrapper
       (`Easter := ! date -d "$(ncal -e)" +%F`) and the security note about macro commands.
 - [ ] Test: extract the examples block, strip `# `, ignore `## ` lines, run `--check` (with the fake `ncal`) → exit 0. Also: `--print-default-config` equals the file created in M1.
@@ -282,7 +304,7 @@ This milestone can draft prose and README material during M6, but executable-exa
 
 ## 7. Open questions (append here)
 
-### Decisions recorded from SPEC §0 (D1–D13)
+### Decisions recorded from SPEC §0 (D1–D19)
 
 - D1: Semantics are intersection; use `1-7 Fri` for the first Friday of each month.
 - D2: A day selector on a single clause selects the starting day of a rollover range; nested clauses intersect.
@@ -296,6 +318,9 @@ This milestone can draft prose and README material during M6, but executable-exa
 - D10: Dependencies are stdlib, `python-dateutil`, `tzlocal`, and system `tzdata`.
 - D11: Executable is `kairos`; config is `$XDG_CONFIG_HOME/kairos/intervals.conf`.
 - D12: A missing explicitly named config is an error and is never created.
+- D19: An INTERVAL is a comma-separated list of parts (plain unions and whole relative expressions), evaluated as their union; a comma before `NUMBER unit` starts a new part. SPEC §6.4, §9.2.
+- D18: A command macro failure is an evaluation-time error (when a non-skipped line first uses the macro), never a definition-time one; an unused macro never runs, not even under `--check`. SPEC §5.4.
+- D17: Macro names are any text before the first `:=` (no `=`, no leading `!`, at least one letter), may contain spaces and punctuation and may contain other macro names; longest name first. SPEC §5.3.
 - D16: `D before ANCHOR` / `D after ANCHOR` shift each anchor instance as a whole (both endpoints, length kept); they are not runs like `+`/`until`. SPEC §9.1.
 - D15: `Nh` is the whole hour `N:*`, `Nm`/`Nmin` is minute `*:N`; separate kinds `HOUR`/`MINUTE` (ranges/lists inclusive, wrapping). See SPEC §6.1-6.2.
 - D14: Alphabetic tokens that are legacy IANA zone IDs (`CET`, `EET`, `EST`, …) resolve as those zones; other bare abbreviations (`CST`, `CEST`, `IST`) are rejected. See SPEC §8.1.
@@ -309,10 +334,10 @@ This milestone can draft prose and README material during M6, but executable-exa
 - [x] SPEC §6.1 `HHh`/`MMm`/`MMmin`: resolved (D15). `8h` = `8:*`, `30m`/`30min` = `*:30`; they are the kinds `HOUR`/`MINUTE`, with inclusive wrapping ranges and lists, combinable with `TIME` in one clause (all must hold). Evaluation: each group yields the daily windows, which are intersected.
 - [x] Point times: `08:00` lasts one minute, `08:00:30` lasts exactly one second (SPEC §6.2; `TimeSpec.seconds`).
 - [x] `UTC + 2 hours` is a zone plus a duration; `UTC+2 hours` is an error because `hours` has no number (SPEC §6.2).
-- [ ] SPEC V14 says a bare-time anchor `08:00 + 2 hours` "begins at 10:00:00", but §9 (`[s, s + D)`) and §7.1 (the anchor instance starts at `08:00:00`) give `[08:00:00, 10:00:00)`, which is what M6 implements and `tests/test_evaluate.py` / `tests/test_cli_states.py` assert. Most likely V14 meant "ends at 10:00:00". Needs a `spec:` correction by the author.
-- [ ] SPEC §5.3 says macro names may contain spaces and punctuation (`Mary's birthday`) and that longer names are tried first, but §4.1 (and the reader) require `[A-Za-z_][A-Za-z0-9_]*`, and `NAME := …` lines with other names are rejected ("invalid macro name"). The implementation follows §4.1; the author should confirm or extend the grammar.
-- [ ] SPEC V12 lists a bare `X := ! false` as an error, but D4 makes command macros lazy, so an unused one never runs in default mode. Implemented: it is an error when used, and under `--check` (which runs all commands, §2). Confirm that is enough for V12.
+- [x] SPEC V14 says a bare-time anchor `08:00 + 2 hours` "begins at 10:00:00", but §9 (`[s, s + D)`) and §7.1 (the anchor instance starts at `08:00:00`) give `[08:00:00, 10:00:00)`, which is what M6 implements and `tests/test_evaluate.py` / `tests/test_cli_states.py` assert. Most likely V14 meant "ends at 10:00:00". Needs a `spec:` correction by the author. Resolved: author confirmed `[08:00, 10:00)`; spec fixed.
+- [x] SPEC §5.3 says macro names may contain spaces and punctuation (`Mary's birthday`) and that longer names are tried first, but §4.1 (and the reader) require `[A-Za-z_][A-Za-z0-9_]*`, and `NAME := …` lines with other names are rejected ("invalid macro name"). The implementation follows §4.1; the author should confirm or extend the grammar. Resolved (D17, M12): the reader and validator follow §5.3.
+- [x] SPEC V12 lists a bare `X := ! false` as an error, but D4 makes command macros lazy, so an unused one never runs in default mode. Implemented: it is an error when used, and under `--check` (which runs all commands, §2). Confirm that is enough for V12. Resolved (D18, M12): V12 now needs a line that uses `X`.
 - [ ] `tzlocal` could not be installed in the development sandbox (no distribution reachable); `default_timezone` therefore fell back to UTC with a warning there. Tests always pass `--tz`, so they are unaffected.
 - [x] SPEC V14's last paragraph said `08:00 + 2 hours` "begins at 10:00:00": author confirmed the result is `[08:00, 10:00)`; the sentence is fixed.
 - [x] Locale-aware month/weekday names are now planned as M10.
-- [ ] SPEC §5.3 macro names (spaces, punctuation, longest name first) are not implemented by M3; names are identifier-like (now with Unicode letters). Decide whether this is a new milestone.
+- [x] SPEC §5.3 macro names (spaces, punctuation, longest name first) are not implemented by M3; names are identifier-like (now with Unicode letters). Decide whether this is a new milestone. Done as M12.
