@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import re
 from typing import Iterable, Union
 
-from .errors import IntervalKeeperError
+from .errors import ErrorList, IntervalKeeperError
 
 _MACRO_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*:=\s*(.*)$")
 
@@ -36,15 +36,8 @@ class MacroLine:
 ConfigEntry = Union[Node, MacroLine]
 
 
-class ReaderErrors(IntervalKeeperError):
+class ReaderErrors(ErrorList):
     """Aggregate independent line diagnostics while remaining CLI-compatible."""
-
-    def __init__(self, errors: list[IntervalKeeperError]) -> None:
-        if not errors:
-            raise ValueError("ReaderErrors requires at least one diagnostic")
-        first = errors[0]
-        super().__init__(first.path, first.line, first.message)
-        self.errors = tuple(errors)
 
 
 def _error(path: str | None, line: int, message: str) -> IntervalKeeperError:
@@ -159,6 +152,15 @@ def read_config(text: str, path: str | None = None) -> list[ConfigEntry]:
             if "=" in interval_state:
                 interval_text, state = interval_state.split("=", 1)
                 interval_text, state = interval_text.strip(), state.strip()
+                if interval_text.endswith(":"):
+                    # `NAME := VALUE` whose NAME is not an identifier; no INTERVAL ends in ':'.
+                    bad_name = interval_text[:-1].strip()
+                    errors.append(_error(
+                        path, lineno,
+                        f"invalid macro name {bad_name!r} (use letters, digits and '_', not starting with a digit)",
+                    ))
+                    previous_entry = None
+                    continue
                 if not state:
                     errors.append(_error(path, lineno, "STATE must not be empty"))
                     previous_entry = None
