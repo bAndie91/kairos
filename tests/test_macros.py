@@ -161,17 +161,22 @@ class MacroTests(unittest.TestCase):
         self.assertEqual(expand_macro_text("A  B", {"A": "1", "B": "2", "A B": "joined"}), "1  2")
         self.assertEqual(expand_macro_text("A", {"A": "B", "B": "C"}), "B")
 
-    def test_environment_variable_names_for_odd_macro_names(self) -> None:
+    def test_environment_variable_names_are_the_macro_names_as_is(self) -> None:
         self.assertEqual(macro_env_name("WORKDAY"), "KAIROS_MACRO_WORKDAY")
-        self.assertEqual(macro_env_name("Mary's birthday"), "KAIROS_MACRO_Mary_s_birthday")
+        self.assertEqual(macro_env_name("Mary's birthday"), "KAIROS_MACRO_Mary's birthday")
         scope = MacroScope()
         scope.define("a b", "first")
-        scope.define("a_b", "second")  # same variable: the later definition wins
+        scope.define("a_b", "second")  # a different name, a different variable
         scope.define("Mary's birthday", "Jun 1")
+        # the shell cannot expand such names, so read the environment with a program that can
         scope.define(
-            "E", "! printf '%s|%s' \"$KAIROS_MACRO_a_b\" \"$KAIROS_MACRO_Mary_s_birthday\"", command=True,
+            "E",
+            "! python3 -c \"import os; print('|'.join(os.environ[k] for k in "
+            "('KAIROS_MACRO_a b', 'KAIROS_MACRO_a_b', \\\"KAIROS_MACRO_Mary's birthday\\\")))\"",
+            command=True,
         )
-        self.assertEqual(scope.resolve("E"), "second|Jun 1")
+        self.assertEqual(scope.resolve("E"), "first|second|Jun 1")
+
 
 if __name__ == "__main__":
     unittest.main()

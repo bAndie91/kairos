@@ -20,6 +20,7 @@ import itertools
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Iterable, Mapping, Sequence
@@ -74,8 +75,8 @@ def validate_macro_name(name: str) -> None:
 
 
 def macro_env_name(name: str) -> str:
-    """The ``KAIROS_MACRO_<NAME>`` variable for a macro: every non ``[A-Za-z0-9_]`` character becomes ``_``."""
-    return "KAIROS_MACRO_" + re.sub(r"[^A-Za-z0-9_]", "_", name)
+    """The ``KAIROS_MACRO_<NAME>`` variable for a macro: the name exactly as written (SPEC §5.2, D17)."""
+    return "KAIROS_MACRO_" + name
 
 
 def _expansion_pattern(names: Iterable[str]) -> "re.Pattern[str] | None":
@@ -222,14 +223,18 @@ class MacroScope:
         if env:
             process_env.update(env)
 
-        # KAIROS_MACRO_<NAME> for every macro visible where this one was defined; when two
-        # names map to one variable the one defined later (iterated last) wins.
+        # KAIROS_MACRO_<NAME> for every macro visible where this one was defined, NAME as is.
         for macro_name in definition.visible_names:
             if macro_name in self._resolving:
                 continue
-            process_env[macro_env_name(macro_name)] = self.resolve(
-                macro_name, now=now, context=context, allow_run=allow_run,
-            )
+            value = self.resolve(macro_name, now=now, context=context, allow_run=allow_run)
+            variable = macro_env_name(macro_name)
+            if "=" in variable or "\0" in variable or "\0" in value:
+                # Cannot be represented in an environment: leave it out (SPEC §5.2), do not fail.
+                print(f"kairos: warning: macro {macro_name!r} is not passed to commands: "
+                      "it cannot be an environment variable", file=sys.stderr)
+                continue
+            process_env[variable] = value
 
         when = datetime.now(timezone.utc) if now is None else now
         if when.tzinfo is None:

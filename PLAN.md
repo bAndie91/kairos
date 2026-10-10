@@ -250,7 +250,7 @@ Owner: reader/macros/states. Depends on M2, M3, M7.
 - [x] `NAME := VALUE`: NAME is the text before the first `:=`, trimmed, containing no `=` (`reader._split_macro`). Validity is `macros.validate_macro_name`: non-empty, no `=`, no leading `!`, at least one letter, not entirely a reserved word (`Mon morning` is fine).
 - [x] A name may start with, end with or contain another macro's name; only an identical name is a redefinition (D8).
 - [x] Expansion is a single regex pass, longest visible name first, whole-word boundary only on the sides where the name starts/ends with a word character (names with punctuation need none there); names match literally (inner whitespace, case).
-- [x] `KAIROS_MACRO_<NAME>`: every character outside `[A-Za-z0-9_]` becomes `_`; later definitions win when names collapse.
+- [x] `KAIROS_MACRO_<NAME>`: NAME is used as is (`KAIROS_MACRO_Mary's birthday`), no transformation; a variable the OS/runtime would refuse (`=` or NUL, which a macro name cannot contain anyway) is left out with a stderr warning and the command still runs. The shell being unable to read such names is not our concern.
 - [x] D18: defining a command macro runs nothing; a failing command is an error at the macro's line when a non-skipped line first uses it. `--check` evaluates only the command macros some line uses. The command value is cached on the defining scope.
 - [x] Acceptance: V10 (Mary vectors), V12 (`7 := x`, `X := ! false` followed by a use), tests in `tests/test_macros.py`, `tests/test_states.py`, `tests/test_cli_states.py`.
 
@@ -260,10 +260,19 @@ Interpretation choices: the "at least one letter" rule is mine (a name of only d
 
 Owner: parser/evaluate/next_change. Depends on M5, M6, M8, M11.
 
-- [x] Grammar: `interval = part {"," part}`; AST node `Combined(parts)` (a single part stays unwrapped). A comma followed by `NUMBER unit` ends the current union and never continues a day/year list (`Apr 1, 2 days before X` is two parts).
-- [x] The anchor of `D until|before|after ANCHOR` is a greedy union (it takes the plain terms that follow it); a `+` form ends at its duration, so `Mon + 2 days, Fri` is two parts. Term parsers no longer consume the trailing comma; `parse_union` and `parse_expr` do, with the `trailing ','` error.
+- [x] Grammar: `interval = part {"," part}`, `part = term | term + D | D until|before|after term`; AST node `Combined(parts)` (a single part stays unwrapped; consecutive plain terms are merged into one `Union`). A comma followed by `NUMBER unit` never continues a day/year list (`Apr 1, 2 days before X` is two parts).
+- [x] The anchor of every relative form is **one term** (a clause with its lists, or a span): a comma between terms ends the relative expression, so `2 days before Apr 10, Apr 20` is Apr 8 and Apr 20, and `Apr 10, Apr 20 + 2 days` is `Apr 10` plus `Apr 20 + 2 days`; `2 days before Apr 10,20` (a list in one clause) shifts both. `parse_expr` consumes the commas between parts and raises `trailing ','`.
 - [x] `evaluate`: union of the parts, each with its own zone choice and window handling. `next_change`: `_terms`/`finite_end` walk every part.
 - [x] Acceptance: V17 in `tests/test_unions.py` (parser shapes, errors, semantics, window independence, `--next-change`, CLI); the old test that forbade unions of relative forms was removed.
+
+### M14 — Diagnostics for unknown words (SPEC §6.2)
+
+Owner: lexer/names/states (error aggregation). Depends on M10, M7. **Not started.**
+
+- [ ] **Report every unknown word.** Today the lexer raises at the first unknown word of a line, so a config with several typos needs one run per typo. Make `tokenize` collect all unknown words of the INTERVAL (keep tokenizing after one; a line with unknown words is not parsed further) and report each as its own located diagnostic through the existing `ErrorList` aggregation (dedupe/sort by line already exist). Other lines are still checked, so one run lists all unknown words of the config. Other lexical errors (`unexpected character`, bad zone) may stay first-error-per-line unless collecting them is trivial.
+- [ ] **`wrong locale?` hint.** Message form: `unknown word 'May' (undefined macro? wrong locale? "May" is in "en_US.UTF-8" locale)`. For an unknown word the `names` module (the only module that handles locales) enumerates the installed locales (the platform list, e.g. `locale -a` run in a subprocess, with a short timeout; omit the hint if it cannot be listed), and for each one builds the month/weekday name tables with the same `calendar`/`datetime` facilities used for parsing (switch `LC_TIME`, read the names, always restore the effective locale in a `finally`). Report at most a few matching locales (listing order, then `…`); match case-insensitively on full and abbreviated names. No `LANG`/`LC_*` inspection, no hand-written name list. The search runs only on the error path; cache the per-locale tables for the duration of the process so several unknown words do not repeat the work.
+- [ ] Interface sketch: `names.locales_with_name(word) -> list[str]`; `lexer.tokenize` takes/returns the diagnostics (for example it raises an `ErrorList` of located `IntervalKeeperError`s); the hint text is built in the lexer from that list.
+- [ ] Tests: several unknown words in one INTERVAL and across lines are all reported (exit 2, empty stdout, one `PATH:LINE` diagnostic per word); `May` under `LC_ALL=hu_HU.UTF-8` hints at an English locale and `március` under `LC_ALL=en_US.UTF-8` hints at `hu_HU` (subprocess tests, `skipTest` if the locales are not installed; the sandbox can build them with `localedef`); a word that is a name in no locale gets no hint; the effective locale is unchanged after the search (the next word still parses); a missing `locale` command omits the hint without failing.
 
 ### M9 — Default config text, docs, polish
 
@@ -318,7 +327,7 @@ This milestone can draft prose and README material during M6, but executable-exa
 - D10: Dependencies are stdlib, `python-dateutil`, `tzlocal`, and system `tzdata`.
 - D11: Executable is `kairos`; config is `$XDG_CONFIG_HOME/kairos/intervals.conf`.
 - D12: A missing explicitly named config is an error and is never created.
-- D19: An INTERVAL is a comma-separated list of parts (plain unions and whole relative expressions), evaluated as their union; a comma before `NUMBER unit` starts a new part. SPEC §6.4, §9.2.
+- D19: An INTERVAL is a comma-separated list of parts (plain terms and whole relative expressions), evaluated as their union; the anchor of a relative expression is a single term, so a comma between terms always ends it (`2 days before Apr 10, Apr 20` = Apr 8 and Apr 20); a comma before `NUMBER unit` never continues a list. SPEC §6.4, §9.2.
 - D18: A command macro failure is an evaluation-time error (when a non-skipped line first uses the macro), never a definition-time one; an unused macro never runs, not even under `--check`. SPEC §5.4.
 - D17: Macro names are any text before the first `:=` (no `=`, no leading `!`, at least one letter), may contain spaces and punctuation and may contain other macro names; longest name first. SPEC §5.3.
 - D16: `D before ANCHOR` / `D after ANCHOR` shift each anchor instance as a whole (both endpoints, length kept); they are not runs like `+`/`until`. SPEC §9.1.
