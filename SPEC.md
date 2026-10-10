@@ -32,6 +32,7 @@ author: i stroke through what i don't want (most your decisions i agree with) an
 | D13 | `--next-change` with nothing ahead | No arbitrary horizon; print nothing and exit 0 if no future change exists. (§10) | ~~A fixed horizon and exit 1~~ | Search candidate boundaries, then prove exhaustion using the finite Gregorian recurrence cycle after all finite exceptions and duration tails. Include the future recurrence rules of the active TZif zones; don't scan every second/date to eternity. |
 | D17 | Macro names | NAME is any text before the first `:=` (no `=`, not starting with `!`, at least one letter): spaces and punctuation are allowed (`Mary's birthday`), and a name may start with or contain another macro's name as long as the whole name differs. Longest name wins when expanding; only identical names clash (D8). (§4.1, §5.2, §5.3) | ~~Identifiers only (`[A-Za-z_][A-Za-z0-9_]*`)~~ | confirmed by the author |
 | D18 | Command macro failures | A command macro is not executed when it is defined, so a non-zero exit status is an error when the macro is *evaluated* (first used by a line that is not skipped), never at definition/parse time. An unused macro never runs, even under `--check`. (§2, §5.1, §5.4, §11, V12) | ~~`--check` runs every command macro~~ | confirmed by the author |
+| D19 | Unions of relative expressions | `2 days before X, 3 days after Y` and `Apr 1, 2 days before X` are allowed: an INTERVAL is a comma-separated list of *parts*, each a plain term or a whole relative expression (`+`, `until`, `before`, `after`); the result is the union of the parts. A comma followed by `NUMBER unit` starts a new part. The anchor of a leading-duration form (`D until/before/after ANCHOR`) is a union and takes the plain terms that follow it, so write plain terms first. (§6.4, §6.6, §9.2) | ~~A relative expression must be the whole INTERVAL~~ | confirmed by the author |
 
 **Additions beyond your brief** (strike any you do not want): options `--at`, `--tz`, `--format`,
 `--check`, `--print-default-config`, `--version`; env var
@@ -344,6 +345,8 @@ otherwise the comma ends the current *term*, and the next item starts a new clau
 
 A list may not mix point times and time ranges. The union of all terms is the interval.
 
+A comma followed by a duration (`NUMBER unit`, e.g. `2 days`) never continues a list: `2` there is the count of a duration, not a day of month. It starts a new *part* of the INTERVAL, a relative expression (§6.6, §9.2): `Apr 1, 2 days before X` is the two parts `Apr 1` and `2 days before X`, never the day list `1,2`.
+
 ### 6.5 Spans (`--`)
 
 `A -- B` is a *span* between two dates.
@@ -360,13 +363,13 @@ A list may not mix point times and time ranges. The union of all terms is the in
 ### 6.6 Complete grammar
 
 ```
-interval = expr ;                         (* leading "!" is handled by the line, §4.2 *)
-expr     = union
+interval = part { "," part } ;           (* union of the parts, §9.2 *)
+part     = union
          | union "+" duration             (* §9 *)
          | duration "until" union
          | duration "before" union       (* §9.1 *)
          | duration "after" union ;      (* §9.1 *)
-union    = term { "," term } ;            (* comma grouping per §6.4 *)
+union    = term { "," term } ;            (* comma grouping per §6.4; a "," followed by a duration ends the union *)
 term     = span | clause ;
 span     = dateside "--" dateside [ TZ ] ;
 dateside = ( ISODATE | [ YEAR ] [ MONTH ] DOM ) [ TIME ] ;
@@ -483,6 +486,21 @@ DURATION after ANCHOR        e.g.  10 days after Oct 1
 * DURATION, units, ANCHOR, zone choice and calendar-vs-elapsed arithmetic are exactly as in §9; both endpoints of an instance are shifted independently (so a day-long instance stays one calendar day long across a DST change, and `1 month before Mar 31` ends at the clamped date given by `dateutil.relativedelta`).
 * The result is an ordinary set, so it is narrowed, negated, or given children like any other line: a child `08:00-09:00` under `2 days before Apr 10` selects 08:00–09:00 on Apr 8.
 * An instance whose shifted endpoints coincide or invert is dropped.
+
+### 9.2 Several parts in one INTERVAL
+
+Relative expressions are ordinary parts of an INTERVAL (D19). A comma-separated list may mix plain terms and relative expressions in any order, and the INTERVAL is the **union** of its parts:
+
+```
+2 days before Apr 10, 3 days after Oct 1      Apr 8 and Oct 4
+Apr 1, 2 days before Apr 10                   Apr 1 and Apr 8
+Mon + 2 days, Fri                             Mon-Tue and Fri
+```
+
+* A comma followed by `NUMBER unit` starts a new part (§6.4). Otherwise a comma continues the union currently being read.
+* Each part is evaluated on its own, with its own anchor, zone choice (§9) and arithmetic; the INTERVAL is their union. A `TZ` applies to the term it ends, as always, and never spills over to another part.
+* The anchor of `D until|before|after ANCHOR` is a union and reaches up to the next comma followed by a duration (or the end): `2 days before Apr 10, Apr 20` shifts both `Apr 10` and `Apr 20`. Write plain terms first (`Apr 1, 2 days before Apr 10`), or put them after a `+` form, which ends at its duration (`Mon + 2 days, Fri`).
+* The result is an ordinary set, like any other INTERVAL.
 
 ---
 
@@ -632,6 +650,16 @@ Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 an
 1 year before Dec 20 -- Jan 10 = last year
 ```
 `early` is `[2026-11-14 00:00, 2026-11-15 00:00)` (active 2026-11-14 12:00:00, inactive 2026-11-13 23:59:59 and 2026-11-15 00:00:00); `later` is exactly 2026-10-11; `dinner` is `[2026-04-08 12:00:00, 2026-04-08 12:01:00)`; `brunch` is `[11:00:00, 11:01:00)` every day; `clamped` is Feb 28, 2026 (the instance `[Mar 31, Apr 1)` becomes `[Feb 28, Mar 1)`, because Mar 31 minus one month clamps to Feb 28); `last year` is `[2025-12-20, 2026-01-11)` and `[2024-12-20, 2025-01-11)` in the year before. `--next-change` at 2026-10-09 12:00 with only `early` is `2026-11-14 00:00:00`, and at 2026-11-15 00:00:00 the next one is `2027-11-14 00:00:00`. An anchor-narrowing check: with `2 days before Apr 10` as a parent and a child `08:00-09:00 = x`, only 2026-04-08 08:00–09:00 shows `x`.
+
+**V17** several parts in one INTERVAL (`tz=Europe/Budapest`, year 2026; D19):
+```
+2 days before Apr 10, 3 days after Oct 1 = two shifts
+Apr 1, 2 days before Apr 10 = day and shift
+Mon + 2 days, Fri = week
+2 days before Apr 10, Apr 20 = anchor union
+Apr 1, 2 days = oops
+```
+`two shifts` is exactly Apr 8 and Oct 4 (active 2026-04-08 00:00:00, inactive 2026-04-09 00:00:00 and 2026-04-10 12:00); `day and shift` is exactly Apr 1 and Apr 8 (never the days 1 and 2); `week` is every Monday and Tuesday plus every Friday, with no boundary between Mon-Tue and Wed; `anchor union` is Apr 8 and Apr 18 (the shift applies to both `Apr 10` and `Apr 20`); the last line is an error (`2 days` without `until`, `before` or `after`). A trailing comma (`Apr 1,`, `Apr 1, 2 days before Apr 10,`) is an error. With a union INTERVAL `--next-change` still finds the first change of any part (`two shifts` at 2026-01-01 00:00 is `2026-04-08 00:00:00`).
 
 **V15** locale-sensitive month and weekday names (run in subprocesses with environment variables set before Python starts; skip if the requested locale is not installed):
 
