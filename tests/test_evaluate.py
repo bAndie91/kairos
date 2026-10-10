@@ -293,6 +293,9 @@ class WindowContract(unittest.TestCase):
         "1-7 Mon + 5 day", "40 days until Dec 24", "08:00 + 2 hours", "Jan 31 + 1 month", "Mar 1 + 11 months",
         "Mon-Fri 08:00-16:00 Europe/Berlin", "02:00-03:00", "01:00-04:00 America/New_York",
         "Mon 10:00 + 3 hours 30 minutes", "2 weeks until Mar 29",
+        "40 days before Dec 24", "10 days after Oct 1", "2 days before Apr 10 12:00", "3 hours after 08:00",
+        "1 month before Mar 31", "1 year before Dec 20 -- Jan 10", "2 years after Feb 29", "1 day before 02:00-03:00",
+        "1 week after Mon-Fri 08:00-16:00 Europe/Berlin",
     ]
 
     def test_window_independence(self) -> None:

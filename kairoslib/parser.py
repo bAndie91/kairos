@@ -103,7 +103,16 @@ class RelUntil:
     anchor: Union
 
 
-Expr = TUnion[Union, RelPlus, RelUntil]
+@dataclass(frozen=True)
+class RelShift:
+    """``D before ANCHOR`` (``sign == -1``) / ``D after ANCHOR`` (``sign == 1``): every anchor
+    instance moved as a whole by ``sign * D`` (SPEC §9.1)."""
+    duration: Duration
+    anchor: Union
+    sign: int
+
+
+Expr = TUnion[Union, RelPlus, RelUntil, RelShift]
 
 _KIND_FIELD = {
     "YEAR": "years", "MONTH": "months", "DOM": "doms",
@@ -184,14 +193,21 @@ class _Parser:
         if first is not None and first.kind == "NUMBER" and second is not None and word_kind(second) == "UNIT":
             duration = self.parse_duration()
             tok = self.peek()
-            if tok is None or word_kind(tok) != "UNTIL":
-                raise _fail("a leading duration must be followed by 'until' (e.g. '40 days until Dec 24')")
+            keyword = None if tok is None else word_kind(tok)
+            if keyword not in ("UNTIL", "BEFORE", "AFTER"):
+                raise _fail(
+                    "a leading duration must be followed by 'until', 'before' or 'after' "
+                    "(e.g. '40 days until Dec 24', '2 days before Apr 10')"
+                )
+            assert tok is not None
             self.take()
             if self.at_end():
-                raise _fail("'until' needs an anchor interval")
+                raise _fail(f"{tok.text!r} needs an anchor interval")
             anchor = self.parse_union()
             self.expect_end()
-            return RelUntil(duration, anchor)
+            if keyword == "UNTIL":
+                return RelUntil(duration, anchor)
+            return RelShift(duration, anchor, -1 if keyword == "BEFORE" else 1)
         anchor = self.parse_union()
         if self.at("PLUS"):
             self.take()
@@ -204,7 +220,7 @@ class _Parser:
     @staticmethod
     def unexpected(tok: Token, after_tz: Optional[str] = None) -> str:
         if word_kind(tok) == "UNIT":
-            hint = f"; {tok.text!r} needs a number before it (a duration is 'NUMBER unit', written after '+' or before 'until')"
+            hint = f"; {tok.text!r} needs a number before it (a duration is 'NUMBER unit': it follows '+', or comes first before 'until', 'before' or 'after')"
             if after_tz is not None and ("+" in after_tz or "-" in after_tz):
                 hint += f"; note that {after_tz!r} is a zone offset, write 'UTC + 2 hours' (with spaces) for a duration"
             return f"unexpected {tok.text!r}{hint}"
@@ -235,13 +251,14 @@ class _Parser:
         terms: List[Term] = []
         while True:
             terms.append(self.parse_term())
-            if self.at_end() or self.at("PLUS") or self.at_word("until"):
+            if self.at_end() or self.at("PLUS") or self.at_keyword():
                 break
         return Union(tuple(terms))
 
-    def at_word(self, text: str) -> bool:
+    def at_keyword(self) -> bool:
+        """At ``until`` / ``before`` / ``after``: the end of a union (and an error unless a duration led)."""
         tok = self.peek()
-        return tok is not None and tok.kind == "WORD" and tok.text.casefold() == text
+        return tok is not None and word_kind(tok) in ("UNTIL", "BEFORE", "AFTER")
 
     def term_end(self) -> int:
         """Index of the first COMMA/PLUS (or end) from here; spans never contain commas."""
@@ -268,7 +285,7 @@ class _Parser:
     def parse_clause(self) -> Clause:
         fields: Dict[str, tuple] = {}
         tz: Optional[str] = None
-        while not self.at_end() and not self.at("COMMA") and not self.at("PLUS") and not self.at_word("until"):
+        while not self.at_end() and not self.at("COMMA") and not self.at("PLUS") and not self.at_keyword():
             tok = self.peek()
             assert tok is not None
             if tok.kind == "TZ":
@@ -291,6 +308,12 @@ class _Parser:
             if self.at_end() or self.at("PLUS"):
                 raise _fail("trailing ','")
         if not fields:
+            tok = self.peek()
+            if tok is not None and self.at_keyword():
+                raise _fail(
+                    f"unexpected {tok.text!r}; 'until', 'before' and 'after' follow a duration, "
+                    f"e.g. '5 days {tok.text.casefold()} Dec 24'"
+                )
             raise _fail("a clause needs at least one non-time-zone item")
         return self.finish_clause(fields, tz)
 
@@ -515,6 +538,6 @@ def parse_interval(text: str, *, path: Optional[str] = None, lineno: Optional[in
 
 
 __all__ = [
-    "Clause", "DateAtom", "DateSide", "Duration", "Expr", "RelPlus", "RelUntil",
+    "Clause", "DateAtom", "DateSide", "Duration", "Expr", "RelPlus", "RelShift", "RelUntil",
     "Span", "TimeSpec", "Union", "parse_interval",
 ]

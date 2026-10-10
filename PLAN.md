@@ -221,28 +221,33 @@ Owner: names module + lexer/parser/macros. Depends on M5, M3.
 
 No hand-maintained English vocabulary and no reading of `LANG`/`LC_*` by Kairos itself: one module owns locale handling and everything else asks it.
 
-- [ ] New `kairoslib/names.py`, the only module that knows about locales: `init_from_environment()` calls `locale.setlocale(locale.LC_TIME, "")` (Python's `locale` module resolves `LC_ALL` > `LC_TIME` > `LANG`; Kairos never inspects those variables); a `locale.Error` (requested locale not installed) is reported once as a stderr warning, never silent, and the process keeps its current locale. `use_locale(name)` is for tests (explicit locale, same code path).
-- [ ] Month and weekday names come only from the library's locale-aware tables (`calendar.month_name`, `month_abbr`, `day_name`, `day_abbr`, i.e. `datetime` formatting), case-folded; no English list, alias, transliteration or fallback. A string that the locale maps to two different months/weekdays is ambiguous and is reported as such, not guessed.
-- [ ] Tables are cached per effective `LC_TIME` value and never switched per token; a library import without `init_from_environment()` sees whatever `LC_TIME` the process has (the C locale in a fresh interpreter), so unit tests stay deterministic.
-- [ ] Lexer: remove `MONTHS` and `WEEKDAYS`; match names found in the locale tables as whole words, longest first, including names with punctuation (`janv.`) and non-ASCII letters; reserved-word checks (macro names, TZ detection, unknown-word diagnostics) use the same tables.
-- [ ] Parser and macros use the names module (`month_number`, `weekday_number`, reserved check) instead of lexer constants.
-- [ ] CLI calls `init_from_environment()` before reading the config. Subprocess tests set `LC_ALL`/`LANG`/`LC_TIME` before Python starts and `skipTest` when the locale is not installed (V15). Existing English-name tests pin the C locale.
-- [ ] Acceptance: V15 holds for hu_HU, en and C locales including precedence (`LC_ALL` > `LC_TIME` > `LANG`), full and abbreviated names, ranges, lists, macro-expanded names and reserved macro names; with a French locale `janv.` and `lun.` work; no English month/weekday literal remains under `kairoslib/`.
+- [x] New `kairoslib/names.py`, the only module that knows about locales: `init_from_environment()` calls `locale.setlocale(locale.LC_TIME, "")` (Python's `locale` module resolves `LC_ALL` > `LC_TIME` > `LANG`; Kairos never inspects those variables); a `locale.Error` (requested locale not installed) is reported once as a stderr warning, never silent, and the process keeps its current locale. `use_locale(name)` is for tests (explicit locale, same code path).
+- [x] Month and weekday names come only from the library's locale-aware tables (`calendar.month_name`, `month_abbr`, `day_name`, `day_abbr`, i.e. `datetime` formatting), case-folded; no English list, alias, transliteration or fallback. A string that the locale maps to two different months/weekdays is ambiguous and is reported as such, not guessed.
+- [x] Tables are cached per effective `LC_TIME` value and never switched per token; a library import without `init_from_environment()` sees whatever `LC_TIME` the process has (the C locale in a fresh interpreter), so unit tests stay deterministic.
+- [x] Lexer: remove `MONTHS` and `WEEKDAYS`; match names found in the locale tables as whole words, longest first, including names with punctuation (`janv.`) and non-ASCII letters; reserved-word checks (macro names, TZ detection, unknown-word diagnostics) use the same tables.
+- [x] Parser and macros use the names module (`month_number`, `weekday_number`, reserved check) instead of lexer constants.
+- [x] CLI calls `init_from_environment()` before reading the config. Subprocess tests set `LC_ALL`/`LANG`/`LC_TIME` before Python starts and `skipTest` when the locale is not installed (V15). Existing English-name tests pin the C locale.
+- [x] Acceptance: V15 holds for hu_HU, en and C locales including precedence (`LC_ALL` > `LC_TIME` > `LANG`), full and abbreviated names, ranges, lists, macro-expanded names and reserved macro names; with a French locale `janv.` and `lun.` work; no English month/weekday literal remains under `kairoslib/`.
+
+Completed on branch `work/m10-locale-before-after` (`kairoslib/names.py`, lexer/parser/macros/cli changes, `tests/test_locale_names.py`). Names are looked up through `calendar` (locale-aware `datetime` formatting) for the effective `LC_TIME` locale; Kairos never reads `LANG`/`LC_*`. Verified here with hu_HU, fr_FR, de_DE (generated with `localedef`) and C; `en_US` cases skip when not installed. Findings worth knowing: the English alias `Sept` (and `Tues`, `Thur`) is gone because the locale tables do not provide it; macro names now accept Unicode letters (§5.2); in Hungarian the library's weekday abbreviations are single letters (`h`, `k`, `p`, `v`), so a macro called `H` is reserved there, which is the spec working as written. **Not done (M3 gap, not part of M10):** SPEC §5.3 says macro names may contain spaces and punctuation and that longer names are tried first; the implementation still accepts identifier-like names only.
 
 ### M11 — `before` / `after` relative intervals (SPEC §9.1, D16, V16)
 
 Owner: lexer/parser/evaluate. Depends on M5, M6; M8 must keep working.
 
-- [ ] Reserved keywords `before` and `after` (macro names, TZ detection, diagnostics).
-- [ ] Grammar: `duration "before" union` and `duration "after" union`; AST node `RelShift(duration, anchor, sign)`; same error rules as `until` (leading duration must be followed by a keyword, anchor must not be empty, nothing may follow the anchor).
-- [ ] Evaluator: shift both endpoints of every anchor instance in the anchor's zone, calendar units first then elapsed; shifted bare point times keep their one-minute length; dropped if empty/inverted; window-independent (widen the anchor window on the side where an instance would be cut off).
-- [ ] `--next-change`: duration tails of `before`/`after` count as finite tails; V13 oracle covers the new forms.
-- [ ] Acceptance: V16 holds, narrowing by children works, window-independence property test includes `before`/`after`.
+- [x] Reserved keywords `before` and `after` (macro names, TZ detection, diagnostics).
+- [x] Grammar: `duration "before" union` and `duration "after" union`; AST node `RelShift(duration, anchor, sign)`; same error rules as `until` (leading duration must be followed by a keyword, anchor must not be empty, nothing may follow the anchor).
+- [x] Evaluator: shift both endpoints of every anchor instance in the anchor's zone, calendar units first then elapsed; shifted bare point times keep their one-minute length; dropped if empty/inverted; window-independent (widen the anchor window on the side where an instance would be cut off).
+- [x] `--next-change`: duration tails of `before`/`after` count as finite tails; V13 oracle covers the new forms.
+- [x] Acceptance: V16 holds, narrowing by children works, window-independence property test includes `before`/`after`.
+
+Completed on the same branch (`RelShift` in `parser.py`, `_eval_shift` in `evaluate.py`, `tests/test_before_after.py`, plus the new forms in the window-independence property test and the V13 oracle). `before`/`after` are reserved words; a leading duration must be followed by `until`, `before` or `after`.
 
 ### M9 — Default config text, docs, polish
 
 This milestone can draft prose and README material during M6, but executable-example checks and final acceptance depend on M1 and M7 being integrated.
 
+- [ ] The default config text and docs describe `D before ANCHOR` / `D after ANCHOR` (SPEC §9.1) and that month/weekday names follow the `LC_TIME` locale (SPEC §11).
 - [ ] Write the final default config text (SPEC §3.3), including the brief's examples with the working `Easter` wrapper
       (`Easter := ! date -d "$(ncal -e)" +%F`) and the security note about macro commands.
 - [ ] Test: extract the examples block, strip `# `, ignore `## ` lines, run `--check` (with the fake `ncal`) → exit 0. Also: `--print-default-config` equals the file created in M1.
@@ -310,3 +315,4 @@ This milestone can draft prose and README material during M6, but executable-exa
 - [ ] `tzlocal` could not be installed in the development sandbox (no distribution reachable); `default_timezone` therefore fell back to UTC with a warning there. Tests always pass `--tz`, so they are unaffected.
 - [x] SPEC V14's last paragraph said `08:00 + 2 hours` "begins at 10:00:00": author confirmed the result is `[08:00, 10:00)`; the sentence is fixed.
 - [x] Locale-aware month/weekday names are now planned as M10.
+- [ ] SPEC §5.3 macro names (spaces, punctuation, longest name first) are not implemented by M3; names are identifier-like (now with Unicode letters). Decide whether this is a new milestone.

@@ -239,6 +239,8 @@ ORACLE_CONFIGS = {
     "overlap": "08:00-12:00 = a\n10:00-14:00 = a\n13:00-15:00 = b\n",
     "hidden": "Mon-Fri 08:00-12:00 = work\n  09:00-10:00 = @h\n  11:00-11:30 = brief\n",
     "dst": "02:00-03:00 = fold\n01:00-04:00 = crossing\n",
+    "before": "40 days before Dec 24 = early\n",
+    "after": "10 days after 1-7 Mon = later\n3 hours after 08:00 = brunch\n",
 }
 
 
@@ -246,6 +248,7 @@ ORACLE_CONFIGS = {
 FOCUS = {
     "V4": "2026-12-04 12:00", "V5": "2026-07-05 12:00", "V6": "2026-10-01 00:00",
     "V7a": "2026-10-05 00:00", "V7b": "2026-12-23 12:00", "hidden": "2026-10-09 08:00",
+    "before": "2026-11-14 00:00", "after": "2026-10-16 00:00",
 }
 
 
