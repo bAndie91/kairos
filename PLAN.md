@@ -152,16 +152,23 @@ Completed on branch `work/m5-parser` (`kairoslib/lexer.py`, `kairoslib/parser.py
 
 ### M6 — Range sets and AST evaluation (SPEC §7.1, §9)
 
-- [ ] Implement `RangeSet` in `kairoslib/ranges.py`: sorted, disjoint, half-open, adjacent ranges merged; `union`, `intersect`, `subtract`, `clip`, `contains(t)`, `boundaries()`. Property tests against a naive implementation on random small sets.
-- [ ] Implement `eval(node, lo, hi, default_tz) -> RangeSet` in `kairoslib/evaluate.py` with the exact-restriction contract `spec ∩ [lo, hi)`.
+- [x] Implement `RangeSet` in `kairoslib/ranges.py`: sorted, disjoint, half-open, adjacent ranges merged; `union`, `intersect`, `subtract`, `clip`, `contains(t)`, `boundaries()`. Property tests against a naive implementation on random small sets.
+- [x] Implement `eval(node, lo, hi, default_tz) -> RangeSet` in `kairoslib/evaluate.py` with the exact-restriction contract `spec ∩ [lo, hi)`.
   - `Clause`: iterate local dates of the clause's zone from `lo − 1 day` to `hi + 1 day` (using `datetime.date`), test the day-level items, emit ranges per time range, localize with `zoneinfo`, clip.
   - `Span`: iterate candidate years (recurring) or the single explicit year; endpoints via `datetime`; skip years where an endpoint does not exist.
   - `Union`: union of terms.
   - `RelPlus` / `RelUntil`: evaluate anchor over a widened window, take instance starts/ends, and apply duration pairs in the specified order: all calendar units (day/week/month/year) first via `relativedelta`, then elapsed units (hour/minute/second) in UTC. Widen until the first instance in the window is complete; clip.
-- [ ] Implement the exact bare-time semantics: `08:00` is `[08:00:00,08:01:00)`; as a relative anchor its instance start is 08:00:00 and its one-minute duration is ignored.
-- [ ] DST tests from SPEC V14: `Europe/Budapest` gap (2026-03-29) and fold (2026-10-25), including exact UTC boundary assertions for `02:00-03:00`, `01:00-04:00`, and `Mon-Fri 08:00-16:00`. Check both activity and inactivity at each stated boundary; use `zoneinfo` / PEP 495 semantics, not custom timezone arithmetic.
+- [x] Implement the exact bare-time semantics: `08:00` is `[08:00:00,08:01:00)`; as a relative anchor its instance start is 08:00:00 and its one-minute duration is ignored.
+- [x] DST tests from SPEC V14: `Europe/Budapest` gap (2026-03-29) and fold (2026-10-25), including exact UTC boundary assertions for `02:00-03:00`, `01:00-04:00`, and `Mon-Fri 08:00-16:00`. Check both activity and inactivity at each stated boundary; use `zoneinfo` / PEP 495 semantics, not custom timezone arithmetic.
 
 **Acceptance:** evaluation tests for V1, V2, V3, V7, V8, V9 interval texts on single lines (no hierarchy yet).
+
+Completed on branch `work/m6-evaluate` (`kairoslib/ranges.py`, `kairoslib/evaluate.py`, `tests/test_ranges.py`, `tests/test_evaluate.py`). Instants are integer POSIX seconds; `evaluate(expr, lo, hi, default_tz)` returns `expr ∩ [lo, hi)`, checked by a window-independence property test. Interpretation choices made while implementing (review these):
+
+- `times`, `hours` and `minutes` of one clause are each turned into daily windows and **intersected**; a wrapping hour range (`22h-2h`) spills into the next day like a wrapping time range (D2), a wrapping minute range (`50m-10m`) spills into the next hour.
+- A recurring-span endpoint that does not exist in a year (`Feb 29`) collapses to the instant between Feb 28 and Mar 1 (start of Mar 1 in the span's zone), for both the start and the (exclusive) end.
+- Duration arithmetic for `+` / `until` happens in the zone of the first anchor term that names a zone, else the default zone.
+- An anchor with no instance start/end (always on, e.g. `00:00-24:00 + 1 day`) has no meaningful result; the look-back is capped at 100 years so evaluation terminates instead of looping.
 
 ### M7 — Hierarchy, states and default output (SPEC §7.2–7.4)
 
