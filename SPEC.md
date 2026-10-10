@@ -31,6 +31,7 @@ author: i stroke through what i don't want (most your decisions i agree with) an
 | D12 | `--config PATH` that does not exist | Error (exit 2); the default file is created only when **no** config is specified and none is found. (§3.2) | ~~Create it at PATH~~ |
 | D13 | `--next-change` with nothing ahead | No arbitrary horizon; print nothing and exit 0 if no future change exists. (§10) | ~~A fixed horizon and exit 1~~ | Search candidate boundaries, then prove exhaustion using the finite Gregorian recurrence cycle after all finite exceptions and duration tails. Include the future recurrence rules of the active TZif zones; don't scan every second/date to eternity. |
 | D17 | Macro names | NAME is any text before the first `:=` (no `=`, not starting with `!`, at least one letter): spaces and punctuation are allowed (`Mary's birthday`), and a name may start with or contain another macro's name as long as the whole name differs. Longest name wins when expanding; only identical names clash (D8). (§4.1, §5.2, §5.3) | ~~Identifiers only (`[A-Za-z_][A-Za-z0-9_]*`)~~ | confirmed by the author |
+| D18 | Command macro failures | A command macro is not executed when it is defined, so a non-zero exit status is an error when the macro is *evaluated* (first used by a line that is not skipped), never at definition/parse time. An unused macro never runs, even under `--check`. (§2, §5.1, §5.4, §11, V12) | ~~`--check` runs every command macro~~ | confirmed by the author |
 
 **Additions beyond your brief** (strike any you do not want): options `--at`, `--tz`, `--format`,
 `--check`, `--print-default-config`, `--version`; env var
@@ -102,7 +103,7 @@ kairos [OPTIONS]
 | `-n`, `--next-change` | Print the next instant (after "now" or after DATETIME if `--at` is specified) at which the set of reported states changes, instead of the states. |
 | `--tz ZONE` | Default time zone (IANA name, or any form from §8.1). Used for intervals without an explicit zone and for printing. Default: `$TZ`, else the system zone. |
 | `--format FMT` | Output format of `--next-change`. A `strftime` string, or the keywords `iso` (ISO 8601 with offset) or `epoch` (Unix seconds). Default `%Y-%m-%d %H:%M:%S`. |
-| `--check` | Fully parse the config (no subtree skipping, all macro commands run), print nothing, exit 0 if valid. |
+| `--check` | Fully parse the config (no subtree skipping, so every command macro that a line uses is evaluated), print nothing, exit 0 if valid. A command macro that no line uses is never evaluated (D18). |
 | `--print-default-config` | Print the default config text to stdout and exit. |
 | `-V`, `--version`, `-h`, `--help` | As usual. |
 
@@ -215,7 +216,7 @@ NAME := ! COMMAND         shell command; its stdout is the value
   A STRING cannot start with a literal `!` (that always means COMMAND).
 * COMMAND: run with `${SHELL:-/bin/sh} -c COMMAND`, stdin from `/dev/null`, stderr passed through,
   Multiline output collaptsed into 1 line by `s/\n/ /g`. Trailing newline is stripped. 
-  Exit status ≠ 0 → error.
+  Exit status ≠ 0 → error, reported (with the macro's file and line) at the moment the command is evaluated, i.e. when a line first uses the macro (§5.4, D18). A definition alone never runs anything, so it cannot fail.
   Macros are **not** expanded in COMMAND text. Instead the environment contains:
   * everything inherited from the caller;
   * `KAIROS_MACRO_<NAME>` for every macro visible at that point (their resolved values). In the variable name every character of NAME that is not an ASCII letter, digit or `_` becomes `_` (`Mary's birthday` → `KAIROS_MACRO_Mary_s_birthday`); if two names collapse to the same variable, the one defined later wins;
@@ -246,11 +247,12 @@ Before an INTERVAL (or macro STRING) is lexed, every occurrence of a visible mac
 ### 5.4 When commands run (D4)
 
 Parsing is one pass over the file, top to bottom; each macro command runs when its macro name is being resolved (lazy).
+Defining a command macro does not run it, so a command failure (non-zero exit status) is an **evaluation-time** error, not a parse-time one (D18): it is raised when the first line that uses the macro is evaluated, and only then. A command macro that is never used, or is used only in a skipped subtree (default mode), never runs and never fails. The value of a command that ran is kept; later uses do not run it again.
 
 * **Default mode** (print states): when the parser reaches a subtree whose parent's effective set does **not** contain the
   evaluation instant, the subtree is *skipped*: macro commands inside it do not run, and lines that depend on a skipped
   command macro are only structurally validated (indentation, line kind). All other lines are fully parsed and validated.
-* **`--next-change` and `--check`**: never skip.
+* **`--next-change` and `--check`**: never skip, so every command macro used by any line is evaluated (and a failing one is reported); a macro no line uses still never runs.
 
 ### 5.5 Known limitation
 
@@ -513,7 +515,7 @@ Output is formatted in the display zone with `--format`. During a DST fold the d
 Syntax and semantic errors, each reported with file and line:
 
 bad indentation / first line indented; macro with children; unknown word;
-macro name reserved, already visible, empty, without a letter or starting with `!`; macro command failed; duplicate item kind in a clause;
+macro name reserved, already visible, empty, without a letter or starting with `!`; macro command failed (when evaluated, D18); duplicate item kind in a clause;
 mixed-kind range; time range with equal ends; numbers out of range; `*` outside `ISODATE`; 
 span with lists/ranges, missing time on one side, end before start with explicit year; `~` without parent; empty INTERVAL;
 unknown IANA zone ID, invalid offset, or unsupported alphabetic timezone abbreviation; bad `--at`/option values.
@@ -601,7 +603,7 @@ at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names 
 
 **V11** all-lines test: the complete example list from the brief (with the D5 wrapper for `Easter`) parses as one config under `--check`.
 
-**V12** each of these is an error (exit 2, empty stdout): `08:00-25:00 = x`; `Mon Tue = x`; `Foo = x`; `Mon = ~` (top level); `  Mon = x` as the first line; `Mon := x`; `7 := x`; `Q := Jan` twice; `Feb 30 = x`; `2026-02-29 = x`; `Mon =`; `= x`; `X := ! false`; `08:00-08:00 = x`; unknown zone `Mon Foo/Bar = x`.
+**V12** each of these is an error (exit 2, empty stdout): `08:00-25:00 = x`; `Mon Tue = x`; `Foo = x`; `Mon = ~` (top level); `  Mon = x` as the first line; `Mon := x`; `7 := x`; `Q := Jan` twice; `Feb 30 = x`; `2026-02-29 = x`; `Mon =`; `= x`; `X := ! false` followed by a line that uses `X` (`X = x`); `08:00-08:00 = x`; unknown zone `Mon Foo/Bar = x`.
 
 **V13** brute-force oracle (property test): for each config above and random `at` values, `--next-change` equals the first `t' > at` found by stepping one second (or one minute when the config has no seconds) at which the printed state set differs.
 
@@ -615,6 +617,8 @@ at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names 
   - `02:00-03:00 = fold` spans `[00:00,02:00)` UTC: active at 00:30:00 and 01:30:00 UTC, inactive at 02:00:00 UTC.
   - `01:00-04:00 = crossing` spans `[2026-10-24 23:00:00, 2026-10-25 03:00:00)` UTC: active at 00:30:00, 01:30:00, and 02:30:00 UTC, inactive at 03:00:00 UTC.
   - `Mon-Fri 08:00-16:00 = work`: verify local wall-clock endpoints remain 08:00–16:00 and that UTC boundaries are one hour later than in summer after the fall-back.
+
+Command failures are evaluation-time errors (D18): `X := ! false` on its own is valid (exit 0, even with `--check`: nothing uses `X`, so nothing runs); it is an error only once a line uses `X`, and in default mode not if that line sits in a skipped subtree.
 
 Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` is `[08:00:00, 10:00:00)` (§9: the result starts at the instance start).
 
