@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from kairoslib.errors import IntervalKeeperError
-from kairoslib.macros import CommandNotRun, MacroScope, expand_macro_text, validate_macro_name
+from kairoslib.macros import CommandNotRun, MacroScope, expand_macro_text, macro_env_name, validate_macro_name
 
 
 class MacroTests(unittest.TestCase):
@@ -110,6 +110,68 @@ class MacroTests(unittest.TestCase):
         self.assertIn("'X'", caught.exception.message)
         self.assertIn("3", caught.exception.message)
 
+
+    def test_names_may_contain_spaces_and_punctuation(self) -> None:
+        for name in ("Mary's birthday", "Q1 (first quarter)", "Easter!", "a-b c/d", "Étienne's day", "1st Monday"):
+            with self.subTest(name=name):
+                validate_macro_name(name)
+
+    def test_unusable_names_are_rejected(self) -> None:
+        for name in ("", " x", "x ", "a=b", "!x", "7", "1-7 :", "--", "Mon", "mon", "Until", "utc", "Z"):
+            with self.subTest(name=name):
+                with self.assertRaises(IntervalKeeperError):
+                    validate_macro_name(name)
+
+    def test_only_a_whole_name_can_be_reserved(self) -> None:
+        validate_macro_name("Mon morning")
+        validate_macro_name("until noon")
+
+    def test_a_name_may_start_with_or_contain_another_name(self) -> None:
+        scope = MacroScope()
+        scope.define("Mary", "Mon")
+        scope.define("Mary's birthday", "Jun 1")
+        scope.define("birthday", "Dec 24")
+        scope.define("Mary birthday party", "Jul 4")  # starts with `Mary`, contains `birthday`
+        self.assertEqual(scope.expand("Mary"), "Mon")
+        self.assertEqual(scope.expand("Mary's birthday"), "Jun 1")
+        self.assertEqual(scope.expand("Mary birthday party, birthday"), "Jul 4, Dec 24")
+        self.assertEqual(scope.expand("Mary's birthday, Mary, birthday"), "Jun 1, Mon, Dec 24")
+        with self.assertRaises(IntervalKeeperError):
+            scope.define("Mary", "Tue")  # only an identical name clashes
+
+    def test_longest_name_wins_even_when_defined_first(self) -> None:
+        self.assertEqual(
+            expand_macro_text("Mary's birthday", {"Mary": "Mon", "Mary's birthday": "Jun 1"}), "Jun 1",
+        )
+        self.assertEqual(
+            expand_macro_text("Mary's birthday", {"Mary's birthday": "Jun 1", "Mary": "Mon"}), "Jun 1",
+        )
+
+    def test_whole_word_boundaries_for_names_with_punctuation(self) -> None:
+        values = {"Mary's birthday": "X", "end!": "Y", "(a)": "Z"}
+        self.assertEqual(expand_macro_text("Mary's birthday-1", values), "X-1")
+        self.assertEqual(expand_macro_text("anna Mary's birthday", values), "anna X")
+        self.assertEqual(expand_macro_text("annaMary's birthday", values), "annaMary's birthday")
+        self.assertEqual(expand_macro_text("Mary's birthdays", values), "Mary's birthdays")
+        self.assertEqual(expand_macro_text("the end! now, send!", values), "the Y now, send!")
+        self.assertEqual(expand_macro_text("x(a)y", values), "xZy")  # punctuation needs no boundary
+
+    def test_expansion_is_single_pass_and_inner_whitespace_is_literal(self) -> None:
+        self.assertEqual(expand_macro_text("A B", {"A": "B", "B": "C", "A B": "joined"}), "joined")
+        self.assertEqual(expand_macro_text("A  B", {"A": "1", "B": "2", "A B": "joined"}), "1  2")
+        self.assertEqual(expand_macro_text("A", {"A": "B", "B": "C"}), "B")
+
+    def test_environment_variable_names_for_odd_macro_names(self) -> None:
+        self.assertEqual(macro_env_name("WORKDAY"), "KAIROS_MACRO_WORKDAY")
+        self.assertEqual(macro_env_name("Mary's birthday"), "KAIROS_MACRO_Mary_s_birthday")
+        scope = MacroScope()
+        scope.define("a b", "first")
+        scope.define("a_b", "second")  # same variable: the later definition wins
+        scope.define("Mary's birthday", "Jun 1")
+        scope.define(
+            "E", "! printf '%s|%s' \"$KAIROS_MACRO_a_b\" \"$KAIROS_MACRO_Mary_s_birthday\"", command=True,
+        )
+        self.assertEqual(scope.resolve("E"), "second|Jun 1")
 
 if __name__ == "__main__":
     unittest.main()

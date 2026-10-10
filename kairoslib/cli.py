@@ -85,7 +85,6 @@ def _run(args: argparse.Namespace) -> int:
     lines = build_lines(
         entries, path=path, tz=zone, now=moment,
         window=None if full_parse else (at, at + 1),
-        run_all_commands=args.check,
     )
     if args.check:
         return 0

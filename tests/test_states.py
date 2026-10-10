@@ -22,10 +22,10 @@ def epoch(text: str) -> int:
     return to_epoch(datetime.fromisoformat(text).replace(tzinfo=TZ))
 
 
-def lines_for(config: str, *, window=None, run_all_commands: bool = False, now: str = "2026-10-09 12:00"):
+def lines_for(config: str, *, window=None, now: str = "2026-10-09 12:00"):
     return build_lines(
         read_config(config, "t.conf"), path="t.conf", tz=TZ, now=datetime.fromisoformat(now).replace(tzinfo=TZ),
-        window=window, run_all_commands=run_all_commands,
+        window=window,
     )
 
 
@@ -179,20 +179,20 @@ class ErrorCollectionTests(unittest.TestCase):
             lines_for("Mon\n  Tue := 1\n  Tue := 2\n")
         self.assertEqual([error.line for error in caught.exception.errors], [2, 3])
 
-    def test_run_all_commands_reports_unused_failures_at_the_macro_line(self) -> None:
-        self.assertTrue(lines_for("X := ! false\n") == [])
+    def test_a_failing_command_is_an_error_only_when_a_line_evaluates_it(self) -> None:
+        # D18: defining it runs nothing, so an unused failing command is fine ...
+        self.assertEqual(lines_for("Mon = a\nX := ! false\n")[0].node.lineno, 1)
+        # ... and it is reported, at the macro's line, once a line uses it.
         with self.assertRaises(ErrorList) as caught:
-            lines_for("Mon = a\nX := ! false\n", run_all_commands=True)
+            lines_for("Mon = a\nX := ! false\nTue X = b\n")
         self.assertEqual([error.line for error in caught.exception.errors], [2])
 
-    def test_unused_command_gets_its_defining_lines_as_context(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            out = Path(temp) / "ctx"
-            lines_for(
-                f"Mon = parent\n  U := ! echo \"$KAIROS_INTERVAL_0/$KAIROS_STATE_0\" > '{out}'\n",
-                run_all_commands=True,
-            )
-            self.assertEqual(out.read_text(), "Mon/parent\n")
+    def test_a_failing_command_in_a_skipped_subtree_is_not_evaluated(self) -> None:
+        config = "Fri = parent\n  X := ! false\n  X = child\n"
+        saturday = epoch("2026-10-10 12:00")
+        lines_for(config, window=(saturday, saturday + 1))  # pruned: no error
+        with self.assertRaises(ErrorList):
+            lines_for(config)  # --check / --next-change style: evaluated, fails
 
 
 if __name__ == "__main__":

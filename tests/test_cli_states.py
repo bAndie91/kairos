@@ -224,6 +224,18 @@ class MacroVectorTests(unittest.TestCase):
         self.assertIn("<stdin>:2:", stderr)  # parsed although the subtree is pruned
         self.assertNotIn("<stdin>:4:", stderr)  # structure only: its macro never ran
 
+    def test_v10_names_with_spaces_and_names_starting_with_other_names(self) -> None:
+        config = "Mary := Mon\nMary's birthday := Jun 1\nMary's birthday = party\nMary = m\n"
+        self.assertEqual(states(config, "2026-06-01 10:00", "UTC"), ["party", "m"])  # a Monday
+        self.assertEqual(states(config, "2026-06-08 10:00", "UTC"), ["m"])
+        self.assertEqual(states(config, "2026-06-02 10:00", "UTC"), [])
+
+    def test_macro_names_with_punctuation_in_a_nested_scope(self) -> None:
+        config = "Mon\n  Lunch (12-13) := 12:00-13:00\n  Lunch (12-13), 17:00-18:00 = break\n"
+        self.assertEqual(states(config, "2026-10-12 12:30", "UTC"), ["break"])
+        self.assertEqual(states(config, "2026-10-12 17:30", "UTC"), ["break"])
+        self.assertEqual(states(config, "2026-10-12 15:00", "UTC"), [])
+
     def test_command_receives_now_and_the_ancestor_context(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp) / "env"
@@ -295,13 +307,18 @@ class ErrorVectorTests(unittest.TestCase):
                 self.assertIn(f"<stdin>:{line}: error:", stderr)
                 self.assertIn(keyword, stderr)
 
-    def test_unused_failing_command_is_found_by_check_only(self) -> None:
-        config = "X := ! false\n"
+    def test_command_failure_is_an_evaluation_time_error(self) -> None:
+        # D18: defining a command macro runs nothing, so it cannot fail by itself, not even under --check.
         base = ["--config", "-", "--tz", "UTC", "--at", "2026-10-09 10:00"]
-        self.assertEqual(run_cli(base, config_text=config)[:2], (0, ""))  # lazy: never used, never run
+        for extra in ([], ["--check"], ["--next-change"]):
+            with self.subTest(extra=extra):
+                self.assertEqual(run_cli([*base, *extra], config_text="X := ! false\n")[0], 0)
+        # Once a line uses it, it fails; --check evaluates every used macro (no pruning).
+        config = "X := ! false\nFri = a\nSat\n  X = b\n"
+        self.assertEqual(run_cli(base, config_text=config)[:2], (0, "a\n"))  # Sat's subtree is pruned: never run
         code, stdout, stderr = run_cli([*base, "--check"], config_text=config)
         self.assertEqual((code, stdout), (2, ""))
-        self.assertIn("<stdin>:1: error:", stderr)
+        self.assertIn("<stdin>:1: error:", stderr)  # reported at the macro's own line
 
     def test_all_failing_lines_are_reported_before_exiting(self) -> None:
         config = "Foo = a\nMon = fine\n08:00-25:00 = b\nQ := Jan\nQ := Feb\n"

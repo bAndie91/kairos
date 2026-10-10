@@ -80,7 +80,6 @@ def build_lines(
     tz: tzinfo,
     now: datetime,
     window: Optional[Tuple[int, int]] = None,
-    run_all_commands: bool = False,
 ) -> List[Line]:
     """Expand macros and parse every INTERVAL; raise :class:`ErrorList` on any error.
 
@@ -88,8 +87,9 @@ def build_lines(
     *window* ``(lo, hi)`` (POSIX seconds) switches on default-mode pruning: a
     line's parent must be active somewhere in the window for commands below it
     to run. Without a window nothing is skipped (``--check``, ``--next-change``).
-    Commands otherwise run lazily, on first use (D4); *run_all_commands*
-    (``--check``) also runs the ones nothing uses, so a broken command is found.
+    Commands run lazily, on first use (D4): defining a command macro never runs
+    it, so a command that fails is an error only once a line evaluates it, and one
+    that no line uses never runs (D18).
     """
     # The reader keeps top-level nodes (children nested) and every macro line in
     # one list; merging by line number restores file order for the scope walk.
@@ -100,7 +100,6 @@ def build_lines(
     lines: List[Line] = []
     stack: List[Line] = []
     global_scope = MacroScope()
-    command_macros: List[Tuple[MacroScope, MacroLine, Optional[Line]]] = []
 
     def parent_active(line: Line) -> bool:
         """May the subtree below *line* run commands? (SPEC §5.4)"""
@@ -115,14 +114,10 @@ def build_lines(
         scope = parent.scope if parent is not None else global_scope
 
         if isinstance(entry, MacroLine):
-            is_command = entry.value.startswith("!")
             try:
-                scope.define(entry.name, entry.value, command=is_command, lineno=entry.lineno)
+                scope.define(entry.name, entry.value, command=entry.value.startswith("!"), lineno=entry.lineno)
             except IntervalKeeperError as exc:
                 errors.append(located(exc, path, entry.lineno))
-            else:
-                if is_command:
-                    command_macros.append((scope, entry, parent))
             continue
 
         node: Node = entry  # type: ignore[assignment]
@@ -163,18 +158,6 @@ def build_lines(
                 continue
             line.eff = base.subtract(spec) if node.negated else base.intersect(spec)
         line.evaluated = True
-
-    if run_all_commands:
-        for scope, macro, owner_line in command_macros:
-            try:
-                # A macro some line already used keeps its first-use value; an
-                # unused one sees the lines above its definition as context.
-                scope.resolve(
-                    macro.name, now=now, allow_run=True,
-                    context=_context(owner_line) if owner_line is not None else [],
-                )
-            except IntervalKeeperError as exc:
-                errors.append(located(exc, path, macro.lineno))
 
     if errors:
         # A failing command is reported once per macro, however often it was used.

@@ -76,5 +76,25 @@ class ReaderTests(unittest.TestCase):
             read_config(r"Mon = \q" + "\n")
 
 
+    def test_macro_names_may_contain_spaces_and_punctuation(self) -> None:
+        entries = read_config("Mary's birthday := Jun 1\nMon\n  Q1 (first) :=  Jan-Mar \nMary := Mon\n")
+        self.assertEqual(
+            [(e.name, e.value) for e in entries if isinstance(e, MacroLine)],
+            [("Mary's birthday", "Jun 1"), ("Q1 (first)", "Jan-Mar"), ("Mary", "Mon")],
+        )
+
+    def test_a_line_with_equals_before_the_walrus_is_an_interval_line(self) -> None:
+        node = read_config("Mon = a := b\n")[0]
+        self.assertIsInstance(node, Node)
+        self.assertEqual(node.effective_name, "a := b")
+
+    def test_odd_names_become_macro_lines_and_are_judged_later(self) -> None:
+        for line, name in (("7 := x", "7"), (":= x", ""), ("! x := y", "! x")):
+            with self.subTest(line=line):
+                entry = read_config(line + "\n")[0]
+                self.assertIsInstance(entry, MacroLine)
+                self.assertEqual(entry.name, name)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -16,17 +16,19 @@ Two properties support the default-mode pruning of SPEC §5.4 (implemented in
 """
 from __future__ import annotations
 
+import itertools
 import os
 import re
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Callable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 from .errors import IntervalKeeperError
 from .lexer import is_reserved_word
 
-_MACRO_NAME_RE = re.compile(r"^[^\W\d]\w*$")  # unicode letters/digits/underscore (SPEC §5.2)
+_SERIAL = itertools.count()
+
 
 class CommandNotRun(Exception):
     """A command macro had to run but commands are suppressed (``allow_run=False``)."""
@@ -44,47 +46,61 @@ class MacroDefinition:
     value: str
     command: bool = False
     lineno: int | None = None
-    # Names visible where the macro was defined (SPEC §5.1/§5.2).
-    visible_names: frozenset = field(default_factory=frozenset)
+    # Names visible where the macro was defined, oldest definition first (SPEC §5.1/§5.2).
+    visible_names: tuple = field(default_factory=tuple)
+    serial: int = 0  # global definition order
 
 
 def validate_macro_name(name: str) -> None:
-    """Reject invalid or reserved macro names before they become visible."""
-    if not isinstance(name, str) or not _MACRO_NAME_RE.fullmatch(name):
-        raise IntervalKeeperError(None, None, f"invalid macro name {name!r}")
+    """Reject unusable or reserved macro names before they become visible (SPEC §5.3, D17).
+
+    A name may contain spaces and punctuation (``Mary's birthday``) and may start
+    with or contain another macro's name; it must be non-empty, free of ``=``,
+    must not start with ``!`` and must contain a letter. It is reserved only when
+    the *whole* name is a reserved word.
+    """
+    if not isinstance(name, str) or not name:
+        raise IntervalKeeperError(None, None, "macro name must not be empty")
+    if name != name.strip():
+        raise IntervalKeeperError(None, None, f"macro name {name!r} must not start or end with whitespace")
+    if "=" in name:
+        raise IntervalKeeperError(None, None, f"invalid macro name {name!r}: must not contain '='")
+    if name.startswith("!"):
+        raise IntervalKeeperError(None, None, f"invalid macro name {name!r}: must not start with '!'")
+    if not any(char.isalpha() for char in name):
+        raise IntervalKeeperError(None, None, f"invalid macro name {name!r}: must contain a letter")
     if is_reserved_word(name):
         raise IntervalKeeperError(None, None, f"macro name {name!r} is reserved")
 
 
-def expand_macro_text(text: str, values: Mapping[str, str] | Callable[[str], str]) -> str:
-    """Expand every whole-word macro name once.
+def macro_env_name(name: str) -> str:
+    """The ``KAIROS_MACRO_<NAME>`` variable for a macro: every non ``[A-Za-z0-9_]`` character becomes ``_``."""
+    return "KAIROS_MACRO_" + re.sub(r"[^A-Za-z0-9_]", "_", name)
 
-    Values may be provided as a literal mapping or a callable that resolves a
-    macro name on demand (raising ``KeyError`` for a word that is not a macro).
-    This keeps the expansion single-pass while supporting lazy command-backed
-    macros.
-    """
+
+def _expansion_pattern(names: Iterable[str]) -> "re.Pattern[str] | None":
+    """Regex matching any of *names* as a whole word, the longest name first (SPEC §5.2)."""
+    alternatives = []
+    for name in sorted(set(names), key=lambda item: (-len(item), item)):
+        before = r"(?<!\w)" if re.match(r"\w", name[0]) else ""
+        after = r"(?!\w)" if re.match(r"\w", name[-1]) else ""
+        alternatives.append(before + re.escape(name) + after)
+    return re.compile("|".join(alternatives)) if alternatives else None
+
+
+def _expand(text: str, names: Iterable[str], resolve: Callable[[str], str]) -> str:
+    """Replace every whole-word occurrence of *names* once; ``resolve(name)`` gives the value."""
     if not text:
         return text
+    pattern = _expansion_pattern(names)
+    if pattern is None:
+        return text
+    return pattern.sub(lambda match: resolve(match.group(0)), text)
 
-    if isinstance(values, Mapping):
-        names = sorted(values, key=len, reverse=True)
-        if not names:
-            return text
 
-        pattern = re.compile(r"(?<!\w)(?:" + "|".join(re.escape(name) for name in names) + r")(?!\w)")
-        return pattern.sub(lambda match: values[match.group(0)], text)
-
-    pattern = re.compile(r"(?<!\w)[^\W\d]\w*(?!\w)")
-
-    def replacer(match: re.Match[str]) -> str:
-        token = match.group(0)
-        try:
-            return values(token)
-        except KeyError:
-            return token
-
-    return pattern.sub(replacer, text)
+def expand_macro_text(text: str, values: Mapping[str, str]) -> str:
+    """Expand every whole-word macro name from *values* once (single pass, longest name first)."""
+    return _expand(text, values, values.__getitem__)
 
 
 class MacroScope:
@@ -126,7 +142,8 @@ class MacroScope:
                 value = value[1:].lstrip()
         definition = MacroDefinition(
             name=name, value=value, command=command, lineno=lineno,
-            visible_names=frozenset(visible),
+            visible_names=tuple(sorted(visible, key=lambda item: visible[item].serial)),
+            serial=next(_SERIAL),
         )
         self._definitions[name] = definition
         self._resolved.pop(name, None)
@@ -141,8 +158,9 @@ class MacroScope:
         allow_run: bool = True,
     ) -> str:
         """Expand the macros visible from this scope in *text* (one pass)."""
-        return expand_macro_text(
+        return _expand(
             text,
+            self.visible(),
             lambda token: self.resolve(token, now=now, context=context, allow_run=allow_run),
         )
 
@@ -179,12 +197,12 @@ class MacroScope:
                     definition, now=now, env=env, context=context or (), allow_run=allow_run,
                 )
             else:
-                def lookup(token: str) -> str:
-                    if token not in definition.visible_names:
-                        raise KeyError(token)
-                    return owner.resolve(token, now=now, env=env, context=context, allow_run=allow_run)
-
-                value = expand_macro_text(definition.value, lookup)
+                # Only the names visible where the macro was defined are expanded.
+                value = _expand(
+                    definition.value,
+                    definition.visible_names,
+                    lambda token: owner.resolve(token, now=now, env=env, context=context, allow_run=allow_run),
+                )
             owner._resolved[name] = value
             return value
         finally:
@@ -204,11 +222,12 @@ class MacroScope:
         if env:
             process_env.update(env)
 
-        # KAIROS_MACRO_<NAME> for every macro visible where this one was defined.
-        for macro_name in sorted(definition.visible_names):
+        # KAIROS_MACRO_<NAME> for every macro visible where this one was defined; when two
+        # names map to one variable the one defined later (iterated last) wins.
+        for macro_name in definition.visible_names:
             if macro_name in self._resolving:
                 continue
-            process_env[f"KAIROS_MACRO_{macro_name}"] = self.resolve(
+            process_env[macro_env_name(macro_name)] = self.resolve(
                 macro_name, now=now, context=context, allow_run=allow_run,
             )
 
@@ -246,5 +265,6 @@ __all__ = [
     "MacroDefinition",
     "MacroScope",
     "expand_macro_text",
+    "macro_env_name",
     "validate_macro_name",
 ]

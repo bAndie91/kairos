@@ -2,12 +2,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import re
 from typing import Iterable, Union
 
 from .errors import ErrorList, IntervalKeeperError
 
-_MACRO_RE = re.compile(r"^([^\W\d]\w*)\s*:=\s*(.*)$")
+def _split_macro(body: str) -> tuple[str, str] | None:
+    """``NAME := VALUE`` -> ``(NAME, VALUE)`` (SPEC §4.1, D17), or None for an interval line.
+
+    NAME is the text before the first ``:=``; if it contains an ``=`` the line is
+    an interval line (``Mon = a := b`` has the STATE ``a := b``). Whether NAME is
+    acceptable (letters, reserved words, ...) is decided by ``macros.validate_macro_name``.
+    """
+    index = body.find(":=")
+    if index < 0:
+        return None
+    name = body[:index]
+    if "=" in name:
+        return None
+    return name.strip(), body[index + 2:].strip()
 
 
 @dataclass
@@ -140,9 +152,9 @@ def read_config(text: str, path: str | None = None) -> list[ConfigEntry]:
             errors.append(_error(path, lineno, "first line must not be indented"))
             continue
 
-        macro_match = _MACRO_RE.fullmatch(body)
-        if macro_match:
-            entry: ConfigEntry = MacroLine(lineno, indent, macro_match.group(1), macro_match.group(2).strip())
+        macro = _split_macro(body)
+        if macro is not None:
+            entry: ConfigEntry = MacroLine(lineno, indent, macro[0], macro[1])
         else:
             negated = False
             interval_state = body
@@ -152,15 +164,6 @@ def read_config(text: str, path: str | None = None) -> list[ConfigEntry]:
             if "=" in interval_state:
                 interval_text, state = interval_state.split("=", 1)
                 interval_text, state = interval_text.strip(), state.strip()
-                if interval_text.endswith(":"):
-                    # `NAME := VALUE` whose NAME is not an identifier; no INTERVAL ends in ':'.
-                    bad_name = interval_text[:-1].strip()
-                    errors.append(_error(
-                        path, lineno,
-                        f"invalid macro name {bad_name!r} (use letters, digits and '_', not starting with a digit)",
-                    ))
-                    previous_entry = None
-                    continue
                 if not state:
                     errors.append(_error(path, lineno, "STATE must not be empty"))
                     previous_entry = None
