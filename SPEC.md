@@ -44,8 +44,7 @@ In scope: parsing the config, computing the active states at a given instant, co
 at which the set of active states changes.
 
 Out of scope for v1: daemon/watch mode, notifications, running actions on change, config includes,
-locale-specific month/day names, calendars other than Gregorian, sub-second precision,
-sandboxing of macro commands.
+calendars other than Gregorian, sub-second precision, sandboxing of macro commands.
 
 Document these OOS points.
 
@@ -236,7 +235,7 @@ Names are case-sensitive for macros.
 
 * names are case sensitive and allowed to have space, punctuation, etc. (eg. `Mary's birthday`)
 * longer macro names are tried first, so `birthday` and `Mary's birthday` can coexist.
-* Reserved (case-insensitive) → error: month names and weekday names (full and 3-letter, `Sept`), duration units (§9), `until`, `UTC`, `GMT`, and `Z`. Other timezone-looking strings are TZ tokens only if they match §8.1; there is no abbreviation table.
+* Reserved (case-insensitive) → error: month names and weekday names recognized in the effective `LC_TIME` locale (full and abbreviated forms supplied by the locale/date-time library), duration units (§9), `until`, `UTC`, `GMT`, and `Z`. The month/weekday vocabulary is locale-dependent and must be derived from the same locale-aware date/time facilities used to parse these names; do not hard-code English names or maintain a separate alias list. Other timezone-looking strings are TZ tokens only if they match §8.1; there is no abbreviation table.
 * A macro defined at indentation 0 is visible to all following lines. A macro defined at deeper indentation, as a child of
   line P, is visible to the lines that follow it inside P's subtree. Leaving the subtree ends the scope.
 * Redefining a name that is **visible** at that point (same scope or enclosing scope) → error (D8). Two sibling subtrees may define the same name.
@@ -257,6 +256,21 @@ A command macro is a snapshot taken at evaluation time. Example: `ncal -e` yield
 
 ---
 
+### Locale-dependent calendar names
+
+Month and weekday names are locale-sensitive input, not a fixed English vocabulary. The active locale is the effective process `LC_TIME` locale as selected by the platform/Python locale facilities:
+
+- An explicitly set `LC_ALL` takes precedence; otherwise `LC_TIME` takes precedence over `LANG`; otherwise the platform locale default applies.
+- Initialize locale handling using the standard `locale` module's environment-based locale selection (for example, `locale.setlocale(locale.LC_TIME, "")`), rather than reading environment variables and resolving precedence manually. Do not silently force the `C` locale.
+- Use the standard/library locale-aware date/time name tables and parsing/formatting routines as the sole authority for recognized full and abbreviated month and weekday names. No hand-maintained English list, translation table, transliteration, alias list, or fallback vocabulary is permitted. Locale-aware facilities may expose only the names provided by the selected locale; accept exactly those names and forms that the chosen facility recognizes.
+- This rule applies equally to month and weekday names wherever they occur: standalone atoms, ranges, comma lists, spans, macros after expansion, reserved macro names, and unknown-word diagnostics. The lexer must not accept an English name merely because it is common or was valid in another locale.
+- Locale selection must be initialized before any locale-sensitive lexing/parsing and remain consistent throughout one invocation. Do not temporarily switch locales per token. As this is a CLI process, process-global locale state is acceptable; if the implementation later becomes concurrent/in-process, it must account for the locale module's process-global behavior.
+- Locale-sensitive names are distinct from numeric and ISO forms, which remain locale-independent. ISO dates and numeric fields retain the grammar and validation rules elsewhere in this specification.
+
+Conformance examples: with `LC_ALL` unset and `LC_TIME=hu_HU.UTF-8` (or `LANG=hu_HU.UTF-8` and no overriding `LC_TIME`), `március 15 = x` is valid and `Mar 15 = x` is an unknown-word error. With an English effective `LC_TIME` locale, `Mar 15 = x` is valid and `március 15 = x` is an unknown-word error. These examples assume the corresponding locales are installed on the test system; tests must skip a locale-specific case if that locale is unavailable, rather than treating missing system locale data as a parser defect.
+
+---
+
 ## 6. INTERVAL syntax
 
 ### 6.1 Lexical rules
@@ -271,7 +285,7 @@ After macro expansion the text is tokenised, whitespace being insignificant exce
 | `NUMBER` | digits |
 | `--` `-` `+` `,` `*` | punctuation (`--` is a span operator, `-` a range operator) |
 | `TZ` | IANA zone IDs, numeric UTC offsets, and explicit UTC/GMT/Z forms of §8.1 |
-| `WORD` | letters (month / weekday / unit / `until`, case-insensitive) |
+| `WORD` | Unicode letters and locale-appropriate characters in month / weekday names, duration units, and `until` (case-insensitive where supported by the locale-aware date/time facilities) |
 
 Unknown word → error (`unknown word 'X' (undefined macro?)`).
 
@@ -280,9 +294,9 @@ Unknown word → error (`unknown word 'X' (undefined macro?)`).
 | Kind | Atom | Range `a-b` |
 |------|------|-------------|
 | `YEAR` | integer 100–9999 | `a ≤ b` required |
-| `MONTH` | name (`Jan`, `January`, … `Sept` accepted) | wraps (`Dec-Feb` = Dec, Jan, Feb) |
+| `MONTH` | a full or abbreviated month name recognized by the effective `LC_TIME` locale's date/time facilities | wraps across the calendar year (the locale's December-to-February equivalent selects December, January, February) |
 | `DOM` | integer 1–31 (leading zero ok) | wraps (`28-3` = 28…31, 1…3) |
-| `WEEKDAY` | name (`Mon`, `Monday`, …) | wraps (`Fri-Mon`) |
+| `WEEKDAY` | a full or abbreviated weekday name recognized by the effective `LC_TIME` locale's date/time facilities | wraps (`Friday`-through-`Monday` in the active locale) |
 | `TIME` | `H:MM[:SS]` (`24:00` only as a range end) | wraps past midnight (`23:00-04:00`) |
 | `HOUR` | `Nh`, N = 0–23 (`8h` = `8:*`) | inclusive set of whole hours; wraps (`22h-2h` = 22, 23, 0, 1, 2) |
 | `MINUTE` | `Nm` or `Nmin`, N = 0–59 (`30m` = `*:30`) | inclusive set of minutes of every hour; wraps (`50m-10m`) |
@@ -489,8 +503,8 @@ unknown IANA zone ID, invalid offset, or unsupported alphabetic timezone abbrevi
 
 * One executable file `kairos`, `#!/usr/bin/env python3`, Python ≥ 3.9. No other source files are needed to run it.
 * Allowed third-party: `python-dateutil`, `tzlocal`; system `tzdata`, may add other imports if need emerges during implementation.
-* **All** calendar, weekday, month-length, leap-year, zone, DST and month/year arithmetic goes through `datetime`, `zoneinfo`, `dateutil`. Scanning days with a `for` loop over `datetime.date` is fine but to be minimized;
-  re-implementing leap-year or zone rules is not.
+* **All** calendar, weekday, month-length, leap-year, zone, DST, month/year arithmetic, and locale-dependent month/weekday name interpretation goes through the relevant standard/library facilities (`datetime`, `calendar`, `locale`, `zoneinfo`, `dateutil`). Scanning days with a `for` loop over `datetime.date` is fine but to be minimized; re-implementing leap-year, locale precedence, name tables, case rules, or zone rules is not.
+* Month and weekday names are interpreted according to the process's effective `LC_TIME` locale. Initialize/use locale handling through Python's `locale` module in a way that follows the platform's environment locale selection, including `LC_TIME` taking precedence over `LANG` (and `LC_ALL` taking precedence over both when set). Do not infer the locale by manually inspecting environment variables, and do not hard-code translations, aliases, transliterations, or fallback English names. Delegate name production/recognition to locale-aware date/time facilities (for example, `datetime`/`time` formatting and parsing backed by `locale`, or equivalent library APIs). The locale used for lexing/reserved-word checks and semantic date evaluation must be consistent for one invocation.
 * Interval *set algebra* (union / intersection / subtraction / clipping of lists of `(start, end)` instants) is the tool's own code.
 * Macro commands are arbitrary code run with the user's privileges. There is no sandbox (documented in the default config).
 
@@ -582,6 +596,16 @@ at 2026-02-10 → `first quarter`. Whole-word rule: `mary := Mon` followed by `a
   - `Mon-Fri 08:00-16:00 = work`: verify local wall-clock endpoints remain 08:00–16:00 and that UTC boundaries are one hour later than in summer after the fall-back.
 
 Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` begins at 10:00:00.
+
+**V15** locale-sensitive month and weekday names (run in subprocesses with environment variables set before Python starts; skip if the requested locale is not installed):
+
+- Hungarian effective locale: `LANG=hu_HU.UTF-8`, unset `LC_TIME` and `LC_ALL`. `március 15 = x` parses; `Mar 15 = x` fails as an unknown word.
+- English effective locale: `LANG=en_US.UTF-8`, unset `LC_TIME` and `LC_ALL`. `Mar 15 = x` parses; `március 15 = x` fails as an unknown word.
+- Precedence: with `LANG=hu_HU.UTF-8` and `LC_TIME=en_US.UTF-8` (and `LC_ALL` unset), English month/weekday names are recognized and Hungarian names are rejected. With `LANG=en_US.UTF-8` and `LC_TIME=hu_HU.UTF-8`, Hungarian names are recognized and English names are rejected.
+- `LC_ALL` overrides both: with `LC_ALL=hu_HU.UTF-8`, `LANG=en_US.UTF-8`, and `LC_TIME=en_US.UTF-8`, Hungarian names are recognized and English names are rejected.
+- Repeat the effective-locale checks for full and abbreviated weekday names, month ranges, weekday ranges, comma lists, macro-expanded names, and macro names reserved by month/weekday vocabulary.
+- Locale setup occurs before lexing. Verify locale-aware matching is case-insensitive only to the extent provided by the chosen date/time facilities, and that non-ASCII characters such as `á` survive tokenization and matching.
+- Run a subprocess per locale so Python's process-global locale state cannot leak between tests. Never require an unavailable locale to be installed; report a skip for that locale.
 
 ---
 
