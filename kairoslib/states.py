@@ -199,6 +199,24 @@ def active_states(lines: Sequence[Line], at: int) -> List[str]:
     return [name for name, on in active.items() if on]
 
 
+_PER_RANGE_LIMIT = 32
+
+
+def _evaluate_within(expr: Expr, base: RangeSet, tz: tzinfo) -> RangeSet:
+    """``evaluate(expr)`` restricted to *base* (same result as evaluating the hull, but cheaper).
+
+    A child line is only ever combined with its parent's effective set, so a sparse parent
+    (``Feb 29``) must not make every child scan the whole window.
+    """
+    ranges = base.ranges
+    if len(ranges) > _PER_RANGE_LIMIT:
+        return evaluate(expr, ranges[0][0], ranges[-1][1], tz)
+    result = EMPTY
+    for start, end in ranges:
+        result = result.union(evaluate(expr, start, end, tz))
+    return result
+
+
 def effective_sets(lines: Sequence[Line], lo: int, hi: int, tz: tzinfo) -> Dict[Line, RangeSet]:
     """``E(L)`` for every line over the window ``[lo, hi)`` (SPEC §7.2, §7.3)."""
     result: Dict[Line, RangeSet] = {}
@@ -209,7 +227,7 @@ def effective_sets(lines: Sequence[Line], lo: int, hi: int, tz: tzinfo) -> Dict[
         if not base:
             result[line] = EMPTY
             continue
-        spec = evaluate(line.expr, lo, hi, tz)
+        spec = _evaluate_within(line.expr, base, tz)
         result[line] = base.subtract(spec) if line.negated else base.intersect(spec)
     return result
 
