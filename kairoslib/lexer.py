@@ -2,40 +2,25 @@
 
 The lexer never builds zone objects: a ``TZ`` token only carries the zone text,
 after checking it is acceptable to :func:`kairoslib.timezones.resolve_tz`.
+Month and weekday names are not known here at all: they come from
+:mod:`kairoslib.names`, i.e. from the effective ``LC_TIME`` locale.
 
 Public contract used by other modules (notably macros, M3):
 
-* ``MONTHS`` / ``WEEKDAYS`` / ``UNITS``: casefolded name -> number / canonical unit
-* ``RESERVED_WORDS``: every casefolded word a macro name may not equal
+* ``UNITS`` / ``KEYWORDS``: grammar words (duration units, ``until`` / ``before`` / ``after``)
+* ``is_reserved_word(text)``: True for every word a macro name may not equal
 * ``is_tz_token(text)``: True if *text* is an accepted time-zone token
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import re
-from typing import List, Optional
+from typing import List, Optional, Pattern
 
+from . import names
 from .errors import IntervalKeeperError
 from .timezones import resolve_tz, zone_id_exists
-
-_MONTH_FULL = (
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
-)
-_WEEKDAY_FULL = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
-
-# English, case-insensitive, locale-independent (SPEC §6.2). Months are 1..12;
-# weekdays follow datetime.weekday() (Monday == 0).
-MONTHS = {}
-for _i, _name in enumerate(_MONTH_FULL, 1):
-    MONTHS[_name] = _i
-    MONTHS[_name[:3]] = _i
-MONTHS["sept"] = 9
-
-WEEKDAYS = {}
-for _i, _name in enumerate(_WEEKDAY_FULL):
-    WEEKDAYS[_name] = _i
-    WEEKDAYS[_name[:3]] = _i
 
 # Duration units (SPEC §9): singular or plural, mapped to the singular form.
 UNITS = {}
@@ -43,9 +28,15 @@ for _unit in ("second", "minute", "hour", "day", "week", "month", "year"):
     UNITS[_unit] = _unit
     UNITS[_unit + "s"] = _unit
 
+KEYWORDS = {"until": "UNTIL", "before": "BEFORE", "after": "AFTER"}
 UTC_WORDS = frozenset({"utc", "gmt", "z"})
 
-RESERVED_WORDS = frozenset(set(MONTHS) | set(WEEKDAYS) | set(UNITS) | {"until"} | set(UTC_WORDS))
+_GRAMMAR_WORDS = frozenset(set(UNITS) | set(KEYWORDS) | set(UTC_WORDS))
+
+
+def is_reserved_word(text: str) -> bool:
+    """True if *text* (case-insensitive) is a grammar word or a month/weekday name of the locale."""
+    return text.casefold() in _GRAMMAR_WORDS or names.is_calendar_name(text)
 
 
 @dataclass(frozen=True)
@@ -55,8 +46,7 @@ class Token:
     pos: int
 
 
-_TOKEN_RE = re.compile(
-    r"""
+_BEFORE_NAMES = r"""
     (?P<WS>\s+)
   | (?P<TZPATH>[A-Za-z][A-Za-z0-9_+\-]*(?:/[A-Za-z0-9_+\-]+)+)
   | (?P<ISODATE>(?:\d{4}|\*)-(?:\d{1,2}|\*)-(?:\d{1,2}|\*)(?!\d))
@@ -69,10 +59,23 @@ _TOKEN_RE = re.compile(
   | (?P<PLUS>\+)
   | (?P<COMMA>,)
   | (?P<STAR>\*)
+"""
+_AFTER_NAMES = r"""
   | (?P<WORD>[^\W\d_]\w*)
-    """,
-    re.VERBOSE,
-)
+"""
+
+
+@lru_cache(maxsize=16)
+def _compiled(locale_key: str) -> Pattern[str]:
+    """Token pattern for one effective locale: the locale's own month/weekday spellings, longest first,
+    matched as whole words (so punctuation such as the dot in ``janv.`` stays part of the name)."""
+    spellings = sorted(names.calendar_names(), key=len, reverse=True)
+    if spellings:
+        alternatives = "|".join(re.escape(text) for text in spellings)
+        name_group = rf"  | (?P<LNAME>(?<!\w)(?i:{alternatives})(?!\w))"
+    else:  # pragma: no cover - a locale without any names
+        name_group = "  | (?P<LNAME>(?!))"
+    return re.compile(_BEFORE_NAMES + name_group + _AFTER_NAMES, re.VERBOSE)
 
 
 def is_tz_token(text: str) -> bool:
@@ -91,10 +94,11 @@ def _error(message: str) -> IntervalKeeperError:
 
 def tokenize(text: str) -> List[Token]:
     """Split macro-expanded INTERVAL text into tokens, longest match first."""
+    pattern = _compiled(names.current_locale())
     tokens: List[Token] = []
     pos = 0
     while pos < len(text):
-        match = _TOKEN_RE.match(text, pos)
+        match = pattern.match(text, pos)
         if match is None:
             raise _error(f"unexpected character {text[pos]!r}")
         kind = match.lastgroup or ""
@@ -106,11 +110,15 @@ def tokenize(text: str) -> List[Token]:
         if kind in ("TZPATH", "TZOFF"):
             resolve_tz(value)  # validates; raises a user-facing error naming the token
             tokens.append(Token("TZ", value, start))
+        elif kind == "LNAME":
+            if names.is_ambiguous(value):
+                raise _error(f"ambiguous month/weekday name {value!r} in the current locale")
+            tokens.append(Token("WORD", value, start))
         elif kind == "WORD":
             folded = value.casefold()
-            if folded in UTC_WORDS or (folded not in RESERVED_WORDS and zone_id_exists(value)):
+            if folded in UTC_WORDS or (not is_reserved_word(value) and zone_id_exists(value)):
                 tokens.append(Token("TZ", value, start))
-            elif folded in RESERVED_WORDS:
+            elif is_reserved_word(value):
                 tokens.append(Token("WORD", value, start))
             else:
                 hint = ""
@@ -123,22 +131,17 @@ def tokenize(text: str) -> List[Token]:
 
 
 def word_kind(token: Token) -> Optional[str]:
-    """Classify a WORD token as ``MONTH``, ``WEEKDAY``, ``UNIT``, ``UNTIL`` or None."""
+    """Classify a WORD token as ``MONTH``, ``WEEKDAY``, ``UNIT``, ``UNTIL``, ``BEFORE``, ``AFTER`` or None."""
     if token.kind != "WORD":
         return None
-    folded = token.text.casefold()
-    if folded in MONTHS:
+    if names.month_number(token.text) is not None:
         return "MONTH"
-    if folded in WEEKDAYS:
+    if names.weekday_number(token.text) is not None:
         return "WEEKDAY"
+    folded = token.text.casefold()
     if folded in UNITS:
         return "UNIT"
-    if folded == "until":
-        return "UNTIL"
-    return None
+    return KEYWORDS.get(folded)
 
 
-__all__ = [
-    "MONTHS", "WEEKDAYS", "UNITS", "RESERVED_WORDS", "Token",
-    "is_tz_token", "tokenize", "word_kind",
-]
+__all__ = ["KEYWORDS", "UNITS", "Token", "is_reserved_word", "is_tz_token", "tokenize", "word_kind"]

@@ -22,7 +22,8 @@ from datetime import date
 from typing import Dict, List, Optional, Tuple, Union as TUnion
 
 from .errors import IntervalKeeperError
-from .lexer import MONTHS, UNITS, WEEKDAYS, Token, tokenize, word_kind
+from . import names
+from .lexer import UNITS, Token, tokenize, word_kind
 
 Range = Tuple[int, int]
 
@@ -339,7 +340,7 @@ class _Parser:
                 raise _fail(f"day of month {text!r} out of range (1-31)")
             return day
         if kind == "MONTH":
-            return MONTHS[text.casefold()]
+            return names.month_number(text)
         if kind == "HOUR":
             hour = int(text[:-1])
             if hour > 23:
@@ -350,7 +351,7 @@ class _Parser:
             if minute > 59:
                 raise _fail(f"minute {text!r} out of range (0m-59m)")
             return minute
-        return WEEKDAYS[text.casefold()]
+        return names.weekday_number(text)
 
     @staticmethod
     def parse_time(tok: Token) -> Tuple[int, bool, bool]:
@@ -438,7 +439,7 @@ class _Parser:
                     raise _fail(f"year {toks[i].text!r} out of range (100-9999)")
                 i += 1
             if i < len(toks) and word_kind(toks[i]) == "MONTH":
-                month = MONTHS[toks[i].text.casefold()]
+                month = names.month_number(toks[i].text)
                 i += 1
             if i < len(toks) and toks[i].kind == "NUMBER" and int(toks[i].text) < 100:
                 day = int(toks[i].text)

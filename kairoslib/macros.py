@@ -24,9 +24,9 @@ from datetime import datetime, timezone
 from typing import Callable, Mapping, Sequence
 
 from .errors import IntervalKeeperError
-from .lexer import RESERVED_WORDS
+from .lexer import is_reserved_word
 
-_MACRO_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_MACRO_NAME_RE = re.compile(r"^[^\W\d]\w*$")  # unicode letters/digits/underscore (SPEC §5.2)
 
 class CommandNotRun(Exception):
     """A command macro had to run but commands are suppressed (``allow_run=False``)."""
@@ -52,7 +52,7 @@ def validate_macro_name(name: str) -> None:
     """Reject invalid or reserved macro names before they become visible."""
     if not isinstance(name, str) or not _MACRO_NAME_RE.fullmatch(name):
         raise IntervalKeeperError(None, None, f"invalid macro name {name!r}")
-    if name.casefold() in RESERVED_WORDS:
+    if is_reserved_word(name):
         raise IntervalKeeperError(None, None, f"macro name {name!r} is reserved")
 
 
@@ -72,10 +72,10 @@ def expand_macro_text(text: str, values: Mapping[str, str] | Callable[[str], str
         if not names:
             return text
 
-        pattern = re.compile(r"(?<![A-Za-z0-9_])(?:" + "|".join(re.escape(name) for name in names) + r")(?![A-Za-z0-9_])")
+        pattern = re.compile(r"(?<!\w)(?:" + "|".join(re.escape(name) for name in names) + r")(?!\w)")
         return pattern.sub(lambda match: values[match.group(0)], text)
 
-    pattern = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_])")
+    pattern = re.compile(r"(?<!\w)[^\W\d]\w*(?!\w)")
 
     def replacer(match: re.Match[str]) -> str:
         token = match.group(0)

@@ -7,7 +7,7 @@ from typing import Iterable, Union
 
 from .errors import ErrorList, IntervalKeeperError
 
-_MACRO_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*:=\s*(.*)$")
+_MACRO_RE = re.compile(r"^([^\W\d]\w*)\s*:=\s*(.*)$")
 
 
 @dataclass

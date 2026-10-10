@@ -15,14 +15,24 @@ LAUNCHER = ROOT / "kairos"
 def run_cli(
     args: Sequence[str],
     config_text: str | None = None,
-    env: Mapping[str, str] | None = None,
+    env: Mapping[str, str | None] | None = None,
 ) -> tuple[int, str, str]:
     """Run the source-checkout CLI and return (exit code, stdout, stderr)."""
     child_env = os.environ.copy()
     # Ensure the package works without relying on a caller-provided PYTHONPATH.
     child_env.pop("PYTHONPATH", None)
+    locale_vars = ("LC_ALL", "LC_TIME", "LANG", "LANGUAGE")
+    if not (env and any(name in env for name in locale_vars)):
+        # Month/weekday names follow the locale: pin C so tests do not depend on the developer's.
+        for name in locale_vars:
+            child_env.pop(name, None)
+        child_env["LC_ALL"] = "C"
     if env:
-        child_env.update(env)
+        for name, value in env.items():
+            if value is None:
+                child_env.pop(name, None)
+            else:
+                child_env[name] = value
     command = [sys.executable, str(LAUNCHER), *args]
     completed = subprocess.run(
         command,

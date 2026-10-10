@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 
 from kairoslib.errors import IntervalKeeperError
-from kairoslib.lexer import RESERVED_WORDS, is_tz_token, tokenize
+from kairoslib.lexer import is_reserved_word, is_tz_token, tokenize
 from kairoslib.parser import (
     Clause, DateAtom, DateSide, Duration, RelPlus, RelUntil, Span, TimeSpec, Union, parse_interval,
 )
@@ -48,8 +48,8 @@ class LexerTests(unittest.TestCase):
             self.assertIn(needle, ctx.exception.message)
 
     def test_shared_vocabulary(self) -> None:
-        for word in ("mon", "sept", "dec", "days", "until", "utc", "gmt", "z", "sunday"):
-            self.assertIn(word, RESERVED_WORDS)
+        for word in ("mon", "dec", "days", "until", "before", "after", "utc", "gmt", "z", "sunday"):
+            self.assertTrue(is_reserved_word(word), word)
         self.assertTrue(is_tz_token("Europe/Budapest"))
         self.assertFalse(is_tz_token("CST"))
 
@@ -63,7 +63,6 @@ class ClauseTests(unittest.TestCase):
             "Mon-Fri": one(weekdays=((0, 4),)),
             "Mon - Fri": one(weekdays=((0, 4),)),
             "Jun,Jul,Aug": one(months=((6, 6), (7, 7), (8, 8))),
-            "Sept": one(months=((9, 9),)),
             "*-*-01": one(dates=(DateAtom(None, None, 1),)),
             "*-12-*": one(dates=(DateAtom(None, 12, None),)),
             "2026-12-24,2026-12-25": one(dates=(DateAtom(2026, 12, 24), DateAtom(2026, 12, 25))),

@@ -6,7 +6,7 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone, tzinfo
 
-from . import __version__
+from . import __version__, names
 from .config import load_config
 from .errors import IntervalKeeperError
 from .evaluate import to_epoch
@@ -102,13 +102,15 @@ def _run(args: argparse.Namespace) -> int:
             sys.stdout.write(text + "\n")
         return 0
 
-    names = active_states(lines, at)
-    if names:
-        sys.stdout.write("\n".join(names) + "\n")
+    states = active_states(lines, at)
+    if states:
+        sys.stdout.write("\n".join(states) + "\n")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Month/weekday names follow the environment's LC_TIME locale; set it up before anything is lexed.
+    names.init_from_environment()
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
