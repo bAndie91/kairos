@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import re
-from typing import Iterable
+from typing import Iterable, Union
 
 from .errors import IntervalKeeperError
 
@@ -33,7 +33,7 @@ class MacroLine:
     value: str
 
 
-ConfigEntry = Node | MacroLine
+ConfigEntry = Union[Node, MacroLine]
 
 
 class ReaderErrors(IntervalKeeperError):

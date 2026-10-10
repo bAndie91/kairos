@@ -14,6 +14,7 @@ when available as a fallback. Kairos does not maintain an abbreviation map.
 """
 from __future__ import annotations
 
+import functools
 import os
 import re
 import sys
@@ -25,6 +26,17 @@ from .errors import IntervalKeeperError
 
 
 _OFFSET_RE = re.compile(r"^(?:UTC|GMT)([+-])(\d{1,2})(?::?(\d{2}))?$", re.IGNORECASE)
+
+
+@functools.lru_cache(maxsize=1)
+def _zone_index() -> Mapping[str, str]:
+    """Casefolded IANA zone ID -> canonical ID (available_timezones() is slow, so cache it)."""
+    return {name.casefold(): name for name in available_timezones()}
+
+
+def zone_id_exists(token: str) -> bool:
+    """True if *token* is an IANA zone ID (case-insensitive), e.g. ``Europe/Berlin`` or ``CET``."""
+    return token.casefold() in _zone_index()
 
 
 def resolve_tz(token: str, *, when: datetime | None = None, stderr: TextIO | None = None) -> tzinfo:
@@ -49,7 +61,7 @@ def resolve_tz(token: str, *, when: datetime | None = None, stderr: TextIO | Non
             delta = -delta
         return timezone(delta, name=raw)
 
-    canonical = {name.casefold(): name for name in available_timezones()}.get(raw.casefold())
+    canonical = _zone_index().get(raw.casefold())
     if canonical is None:
         if raw.isalpha():
             raise IntervalKeeperError(
@@ -96,4 +108,4 @@ def default_timezone(
     return timezone.utc
 
 
-__all__ = ["default_timezone", "resolve_tz"]
+__all__ = ["default_timezone", "resolve_tz", "zone_id_exists"]
