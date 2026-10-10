@@ -30,6 +30,7 @@ author: i stroke through what i don't want (most your decisions i agree with) an
 | D11 | Names | Script `kairos` (no `.py`); config `$XDG_CONFIG_HOME/kairos/intervals.conf`. (§3) | | agreed |
 | D12 | `--config PATH` that does not exist | Error (exit 2); the default file is created only when **no** config is specified and none is found. (§3.2) | ~~Create it at PATH~~ |
 | D13 | `--next-change` with nothing ahead | No arbitrary horizon; print nothing and exit 0 if no future change exists. (§10) | ~~A fixed horizon and exit 1~~ | Search candidate boundaries, then prove exhaustion using the finite Gregorian recurrence cycle after all finite exceptions and duration tails. Include the future recurrence rules of the active TZif zones; don't scan every second/date to eternity. |
+| D17 | Macro names | NAME is any text before the first `:=` (no `=`, not starting with `!`, at least one letter): spaces and punctuation are allowed (`Mary's birthday`), and a name may start with or contain another macro's name as long as the whole name differs. Longest name wins when expanding; only identical names clash (D8). (§4.1, §5.2, §5.3) | ~~Identifiers only (`[A-Za-z_][A-Za-z0-9_]*`)~~ | confirmed by the author |
 
 **Additions beyond your brief** (strike any you do not want): options `--at`, `--tz`, `--format`,
 `--check`, `--print-default-config`, `--version`; env var
@@ -166,7 +167,7 @@ The file is UTF-8 text; with LF line endings.
 |------|---------------|
 | blank | only whitespace → ignored |
 | comment | first non-blank char is `#` → ignored. **No inline comments** (STATE is free text and may contain `#`). |
-| macro definition | `INDENT NAME := VALUE`, where NAME matches `[A-Za-z_][A-Za-z0-9_]*` |
+| macro definition | `INDENT NAME := VALUE`, where NAME is the text before the first `:=` and contains no `=` (§5.3). A line whose text before the first `:=` contains an `=` is an interval line (`Mon = a := b` is a STATE `a := b`). |
 | interval line | everything else: `INDENT [!] INTERVAL [= STATE]` |
 
 ### 4.2 Interval line
@@ -217,7 +218,7 @@ NAME := ! COMMAND         shell command; its stdout is the value
   Exit status ≠ 0 → error.
   Macros are **not** expanded in COMMAND text. Instead the environment contains:
   * everything inherited from the caller;
-  * `KAIROS_MACRO_<NAME>` for every macro visible at that point (their resolved values);
+  * `KAIROS_MACRO_<NAME>` for every macro visible at that point (their resolved values). In the variable name every character of NAME that is not an ASCII letter, digit or `_` becomes `_` (`Mary's birthday` → `KAIROS_MACRO_Mary_s_birthday`); if two names collapse to the same variable, the one defined later wins;
   * `KAIROS_NOW`: the evaluation instant (ISO 8601 with offset);
   * for interval definitions: `KAIROS_INTERVAL_<LEVEL>` and `KAIROS_STATE_<LEVEL>` for each ancestor line and the line itself where the command-sourced macro is being resolved: LEVEL is the indentation level from 0.
     * `KAIROS_INTERVAL_<LEVEL>`'s value is the ancestor's (or self) INTERVAL text after macro expansion, with a leading `! ` if negated.
@@ -226,16 +227,18 @@ NAME := ! COMMAND         shell command; its stdout is the value
 
 ### 5.2 Expansion
 
-Before an INTERVAL (or macro STRING) is lexed, every **whole word** that equals a visible macro name is replaced by its value.
-A whole word is a run of chars (including unicode letters) bounded by whitespace, punctuation, `-`, `,`, `/`, or the start/end of the string, so `mary_birthday` is not replaced inside `annamary_birthday`.
-Expansion is a **single pass**: replaced text is not rescanned. (Values are already fully expanded when defined.)
-Names are case-sensitive for macros.
+Before an INTERVAL (or macro STRING) is lexed, every occurrence of a visible macro name that stands as a **whole word** is replaced by its value.
+
+* A name is matched literally and case-sensitively, including the inner spaces and punctuation exactly as written in its definition.
+* If several visible names match at the same position, the **longest** wins. So `Mary` and `Mary's birthday` can coexist, and `Mary's birthday` is not read as `Mary` followed by `'s birthday`.
+* Whole word: when the name starts with a *word character* (a letter, including unicode letters, a digit or `_`), the character before the match must not be a word character; when it ends with one, the character after the match must not be one. So `mary` is not replaced inside `annamary` or `mary_birthday`. Whitespace, punctuation, `-`, `,`, `/` and the start/end of the string are boundaries; a name that starts or ends with punctuation needs no boundary on that side.
+* Expansion is a **single pass**: replaced text is not rescanned. (Values are already fully expanded when defined.)
 
 ### 5.3 Names and scope
 
-* names are case sensitive and allowed to have space, punctuation, etc. (eg. `Mary's birthday`)
-* longer macro names are tried first, so `birthday` and `Mary's birthday` can coexist.
-* Reserved (case-insensitive) → error: month names and weekday names recognized in the effective `LC_TIME` locale (full and abbreviated forms supplied by the locale/date-time library), duration units (§9), `until`, `before`, `after`, `UTC`, `GMT`, and `Z`. The month/weekday vocabulary is locale-dependent and must be derived from the same locale-aware date/time facilities used to parse these names; do not hard-code English names or maintain a separate alias list. Other timezone-looking strings are TZ tokens only if they match §8.1; there is no abbreviation table.
+* NAME is the text before the first `:=`, trimmed. It is case sensitive and may contain spaces and punctuation (`Mary's birthday`, `Q1 (first quarter)`, `Easter!`). It must not be empty, must not contain `=` (the line would be an interval line, §4.1), must not start with `!`, and must contain at least one letter (a name made only of digits and punctuation would collide with numbers, times and `*`; `7 := x` is an error) (D17).
+* A name may start with, end with or contain the name of another macro, as long as the whole name is different: `Mary`, `Mary's birthday` and `birthday` can all be defined together. Only an identical name is a redefinition (D8). Expansion tries longer names first (§5.2).
+* Reserved (case-insensitive) → error: a name that is *entirely* one of the following words (`Mon morning` is fine, `Mon` is not): month names and weekday names recognized in the effective `LC_TIME` locale (full and abbreviated forms supplied by the locale/date-time library), duration units (§9), `until`, `before`, `after`, `UTC`, `GMT`, and `Z`. The month/weekday vocabulary is locale-dependent and must be derived from the same locale-aware date/time facilities used to parse these names; do not hard-code English names or maintain a separate alias list. Other timezone-looking strings are TZ tokens only if they match §8.1; there is no abbreviation table.
 * A macro defined at indentation 0 is visible to all following lines. A macro defined at deeper indentation, as a child of
   line P, is visible to the lines that follow it inside P's subtree. Leaving the subtree ends the scope.
 * Redefining a name that is **visible** at that point (same scope or enclosing scope) → error (D8). Two sibling subtrees may define the same name.
@@ -510,7 +513,7 @@ Output is formatted in the display zone with `--format`. During a DST fold the d
 Syntax and semantic errors, each reported with file and line:
 
 bad indentation / first line indented; macro with children; unknown word;
-macro name reserved, or already visible; macro command failed; duplicate item kind in a clause;
+macro name reserved, already visible, empty, without a letter or starting with `!`; macro command failed; duplicate item kind in a clause;
 mixed-kind range; time range with equal ends; numbers out of range; `*` outside `ISODATE`; 
 span with lists/ranges, missing time on one side, end before start with explicit year; `~` without parent; empty INTERVAL;
 unknown IANA zone ID, invalid offset, or unsupported alphabetic timezone abbreviation; bad `--at`/option values.
@@ -594,7 +597,7 @@ at 2026-11-14 23:59:59 → ∅; at 2026-11-15 00:00:00 → `runup`; at 2026-12-2
 Q1 := Jan-Mar
 Q1 = first quarter
 ```
-at 2026-02-10 → `first quarter`. Whole-word rule: `mary := Mon` followed by `annamary = x` → error (unknown token `annamary`). Command macro: `A := Tue`, `D := ! echo "$KAIROS_MACRO_A"`, `D = x` → active on a Tuesday. Scope/pruning: a command macro inside `Jun,Jul,Aug = summer` runs under `--at` in July (and `KAIROS_INTERVAL_0` is `Jun,Jul,Aug`, `KAIROS_STATE_0` is `summer`), does not run under `--at` in October, runs in October with `--check`.
+at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names that start with another macro's name (D17): `Mary := Mon`, `Mary's birthday := Jun 1`, `Mary's birthday = party`, `Mary = m` → at 2026-06-01 10:00 (a Monday) `party`, `m`; at 2026-06-08 10:00 `m`. Whole-word rule: `mary := Mon` followed by `annamary = x` → error (unknown token `annamary`). Command macro: `A := Tue`, `D := ! echo "$KAIROS_MACRO_A"`, `D = x` → active on a Tuesday. Scope/pruning: a command macro inside `Jun,Jul,Aug = summer` runs under `--at` in July (and `KAIROS_INTERVAL_0` is `Jun,Jul,Aug`, `KAIROS_STATE_0` is `summer`), does not run under `--at` in October, runs in October with `--check`.
 
 **V11** all-lines test: the complete example list from the brief (with the D5 wrapper for `Easter`) parses as one config under `--check`.
 
