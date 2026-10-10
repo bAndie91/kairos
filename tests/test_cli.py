@@ -24,11 +24,15 @@ class BootstrapCliTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(stdout, "")
 
-    def test_unimplemented_execution_fails_clearly(self) -> None:
-        code, stdout, stderr = run_cli([])
-        self.assertEqual(code, 2)
-        self.assertEqual(stdout, "")
-        self.assertIn("kairos: error: not implemented", stderr)
+    def test_bad_option_values_fail_before_the_config_is_read(self) -> None:
+        for args in (["--at", "tomorrow"], ["--tz", "Mars/Olympus"], ["--tz", "CEST"]):
+            with self.subTest(args=args):
+                # A missing config would be a different error, so this also shows
+                # the option is validated first.
+                code, stdout, stderr = run_cli([*args, "--config", "/nonexistent/kairos.conf"])
+                self.assertEqual(code, 2)
+                self.assertEqual(stdout, "")
+                self.assertNotIn("does not exist", stderr)
 
 
 if __name__ == "__main__":

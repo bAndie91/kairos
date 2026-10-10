@@ -1,6 +1,6 @@
 # kairos — execution plan
 
-Status: **DRAFT 0.1 — in progress, M0/M1/M2/M3/M4 accepted. M5 intentionally deferred.** Companion to `SPEC.md`, which is the source of truth for behaviour.
+Status: **DRAFT 0.1 — in progress, M0–M7 accepted; M8 (`--next-change`) and M9 (default config text, docs) remain.** Companion to `SPEC.md`, which is the source of truth for behaviour.
 This plan is written so that an agent with no other context can pick it up and continue.
 
 ## 0. How to use this plan (read first)
@@ -172,12 +172,22 @@ Completed on branch `work/m6-evaluate` (`kairoslib/ranges.py`, `kairoslib/evalua
 
 ### M7 — Hierarchy, states and default output (SPEC §7.2–7.4)
 
-- [ ] Implement effective sets `E(L)` (intersect with parent / subtract when negated).
-- [ ] Implement reported-state unions, `U(name)` across lines, ordering by first appearance, and de-duplication in `kairoslib/states.py`.
-- [ ] Default mode: small window `[at, at+1s)`; implement the `parent_active` pruning callback for M3.
-- [ ] CLI: `--at`, `--tz`, print states, `--check`.
+- [x] Implement effective sets `E(L)` (intersect with parent / subtract when negated).
+- [x] Implement reported-state unions, `U(name)` across lines, ordering by first appearance, and de-duplication in `kairoslib/states.py`.
+- [x] Default mode: small window `[at, at+1s)`; implement the `parent_active` pruning callback for M3.
+- [x] CLI: `--at`, `--tz`, print states, `--check`.
 
 **Acceptance:** V1 (states column), V4, V5, V6, V7, V8, V9, V10, V11, V12 pass through the CLI with exact stdout.
+
+Completed (`kairoslib/states.py`, `kairoslib/cli.py`, small changes in `macros.py`, `reader.py`, `errors.py`; tests in `tests/test_states.py`, `tests/test_cli_states.py`, extended `tests/test_macros.py`). `build_lines` is the single place that ties reader, macros and parser together; `effective_sets` / `reported_sets` / `states_at` take any window `[lo, hi)` and are what M8 builds on. A randomized test checks that the pruned default-mode path and the window algebra agree at 60 instants of a year. Interpretation choices made while implementing (review these):
+
+- **Pruning (§5.4).** A line's commands may run only if its parent's effective set contains the evaluation instant (top-level lines always may). Below an inactive parent, a line whose INTERVAL needs a command that is not cached is only structurally validated (reader); every other line there is fully parsed and validated. Descendants of such a line are treated as skipped too, since its effective set is unknown. A value already cached by an earlier use is reused anywhere.
+- **Command macros are cached on the scope that defines them**, so one command runs at most once, on first use, whichever subtree uses it first. A string macro expands only names visible where it was defined, even though it is evaluated lazily.
+- **`--check` runs every command macro**, including unused ones (§2: "all macro commands run"); an unused macro sees the lines above its definition as `KAIROS_INTERVAL_<LEVEL>`/`KAIROS_STATE_<LEVEL>` context. Default mode stays strictly lazy (D4), so an unused failing command is not an error there.
+- **Command context.** `LEVEL` is the depth in the tree (0 = top-level line). The using line's own `KAIROS_INTERVAL_<LEVEL>` is its *unexpanded* text (expansion is still in progress), with `! ` for a negated line; `KAIROS_STATE_<LEVEL>` is the effective name (empty if none). `KAIROS_MACRO_<NAME>` uses the exact macro name (names are case-sensitive, so `a` and `A` do not collide) and only macros visible at the definition. `KAIROS_NOW` is the evaluation instant in the display zone.
+- **Error collection.** Reader errors (indentation, line shape, STATE) are all reported, then processing stops; if the reader is clean, every macro/parse error is reported in line order, once each (a failing command used by several lines is reported once, at the macro line). A line below a broken line is still checked.
+- `--at` accepts a bare date (00:00), `T` or space, optional seconds, and `Z` / `±HH[:MM]`; without an offset the time is local to the display zone (an ambiguous time takes its first occurrence). Options are validated before the config is read, so a bad option never creates the default config.
+- `--next-change` is parsed and fully validated, then fails with "not implemented" until M8.
 
 ### M8 — `--next-change` (SPEC §10)
 
@@ -263,3 +273,7 @@ This milestone can draft prose and README material during M6, but executable-exa
 - [x] SPEC §6.1 `HHh`/`MMm`/`MMmin`: resolved (D15). `8h` = `8:*`, `30m`/`30min` = `*:30`; they are the kinds `HOUR`/`MINUTE`, with inclusive wrapping ranges and lists, combinable with `TIME` in one clause (all must hold). Evaluation: each group yields the daily windows, which are intersected.
 - [x] Point times: `08:00` lasts one minute, `08:00:30` lasts exactly one second (SPEC §6.2; `TimeSpec.seconds`).
 - [x] `UTC + 2 hours` is a zone plus a duration; `UTC+2 hours` is an error because `hours` has no number (SPEC §6.2).
+- [ ] SPEC V14 says a bare-time anchor `08:00 + 2 hours` "begins at 10:00:00", but §9 (`[s, s + D)`) and §7.1 (the anchor instance starts at `08:00:00`) give `[08:00:00, 10:00:00)`, which is what M6 implements and `tests/test_evaluate.py` / `tests/test_cli_states.py` assert. Most likely V14 meant "ends at 10:00:00". Needs a `spec:` correction by the author.
+- [ ] SPEC §5.3 says macro names may contain spaces and punctuation (`Mary's birthday`) and that longer names are tried first, but §4.1 (and the reader) require `[A-Za-z_][A-Za-z0-9_]*`, and `NAME := …` lines with other names are rejected ("invalid macro name"). The implementation follows §4.1; the author should confirm or extend the grammar.
+- [ ] SPEC V12 lists a bare `X := ! false` as an error, but D4 makes command macros lazy, so an unused one never runs in default mode. Implemented: it is an error when used, and under `--check` (which runs all commands, §2). Confirm that is enough for V12.
+- [ ] `tzlocal` could not be installed in the development sandbox (no distribution reachable); `default_timezone` therefore fell back to UTC with a warning there. Tests always pass `--tz`, so they are unaffected.
