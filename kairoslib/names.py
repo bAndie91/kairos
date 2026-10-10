@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import calendar
 import locale
+import subprocess
 import sys
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict, FrozenSet, Optional, Set, TextIO
+from typing import Dict, FrozenSet, List, Optional, Set, TextIO
 
 
 def init_from_environment(error_stream: Optional[TextIO] = None) -> bool:
@@ -116,7 +117,58 @@ def calendar_names() -> FrozenSet[str]:
     return _current().spellings
 
 
+def installed_locales() -> List[str]:
+    """Names of the locales installed on this system, in the platform's listing order.
+
+    The platform's own list (``locale -a``) is the source; if it cannot be obtained the
+    result is empty. Only used to explain an unknown word (SPEC §6.2).
+    """
+    try:
+        done = subprocess.run(
+            ["locale", "-a"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, errors="replace", timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    seen: Dict[str, None] = {}
+    for line in done.stdout.splitlines():
+        name = line.strip()
+        if name:
+            seen.setdefault(name, None)
+    return list(seen)
+
+
+@lru_cache(maxsize=1)
+def _name_index() -> Dict[str, List[str]]:
+    """casefolded month/weekday name -> installed locales that spell it that way (built once, lazily)."""
+    index: Dict[str, List[str]] = {}
+    original = locale.setlocale(locale.LC_TIME)
+    try:
+        for name in installed_locales():
+            try:
+                locale.setlocale(locale.LC_TIME, name)
+            except locale.Error:
+                continue
+            tables = _tables(current_locale())
+            for word in (*tables.months, *tables.weekdays, *tables.ambiguous):
+                index.setdefault(word, []).append(name)
+    finally:
+        locale.setlocale(locale.LC_TIME, original)
+    return index
+
+
+def locales_with_name(text: str) -> List[str]:
+    """Installed locales (other than the effective one) in which *text* is a month or weekday name."""
+    effective = current_locale()
+    found = _name_index().get(text.casefold(), [])
+    others = [name for name in found if name != effective]
+    # The built-in C/POSIX locales are the least informative answer: name them only when
+    # no other locale knows the word.
+    plain = [name for name in others if name not in ("C", "POSIX") and not name.startswith("C.")]
+    return plain or others
+
+
 __all__ = [
     "calendar_names", "current_locale", "init_from_environment", "is_ambiguous",
-    "is_calendar_name", "month_number", "use_locale", "weekday_number",
+    "installed_locales", "is_calendar_name", "locales_with_name", "month_number", "use_locale", "weekday_number",
 ]

@@ -73,6 +73,12 @@ def _context(line: Line) -> List[Tuple[int, str, str]]:
     return result
 
 
+def _collect(errors: List[IntervalKeeperError], exc: IntervalKeeperError, path: Optional[str], lineno: int) -> None:
+    """Add *exc* (flattening an :class:`ErrorList`) with its file and line."""
+    for error in (exc.errors if isinstance(exc, ErrorList) else (exc,)):
+        errors.append(located(error, path, lineno))
+
+
 def build_lines(
     entries: Sequence[ConfigEntry],
     *,
@@ -117,7 +123,7 @@ def build_lines(
             try:
                 scope.define(entry.name, entry.value, command=entry.value.startswith("!"), lineno=entry.lineno)
             except IntervalKeeperError as exc:
-                errors.append(located(exc, path, entry.lineno))
+                _collect(errors, exc, path, entry.lineno)
             continue
 
         node: Node = entry  # type: ignore[assignment]
@@ -133,12 +139,12 @@ def build_lines(
         except CommandNotRun:
             continue  # depends on a command that must not run here: structure only
         except IntervalKeeperError as exc:
-            errors.append(located(exc, path, node.lineno))
+            _collect(errors, exc, path, node.lineno)
             continue
         try:
             line.expr = parse_interval(line.expanded, path=path, lineno=node.lineno)
         except IntervalKeeperError as exc:
-            errors.append(located(exc, path, node.lineno))
+            _collect(errors, exc, path, node.lineno)
             continue
 
         if window is None:
@@ -154,7 +160,7 @@ def build_lines(
             try:
                 spec = evaluate(line.expr, lo, hi, tz)
             except IntervalKeeperError as exc:
-                errors.append(located(exc, path, node.lineno))
+                _collect(errors, exc, path, node.lineno)
                 continue
             line.eff = base.subtract(spec) if node.negated else base.intersect(spec)
         line.evaluated = True

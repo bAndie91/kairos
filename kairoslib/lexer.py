@@ -19,7 +19,7 @@ import re
 from typing import List, Optional, Pattern
 
 from . import names
-from .errors import IntervalKeeperError
+from .errors import ErrorList, IntervalKeeperError
 from .timezones import resolve_tz, zone_id_exists
 
 # Duration units (SPEC §9): singular or plural, mapped to the singular form.
@@ -92,15 +92,36 @@ def _error(message: str) -> IntervalKeeperError:
     return IntervalKeeperError(None, None, message)
 
 
+_MAX_LOCALES_SHOWN = 3
+
+
+def _locale_hint(word: str) -> str:
+    """``wrong locale? "May" is in "en_US.UTF-8" locale`` if another installed locale knows the word."""
+    found = names.locales_with_name(word)
+    if not found:
+        return ""
+    shown = ", ".join(f'"{name}"' for name in found[:_MAX_LOCALES_SHOWN])
+    if len(found) == 1:
+        return f' wrong locale? "{word}" is in {shown} locale'
+    more = ", …" if len(found) > _MAX_LOCALES_SHOWN else ""
+    return f' wrong locale? "{word}" is in the {shown}{more} locales'
+
+
 def tokenize(text: str) -> List[Token]:
-    """Split macro-expanded INTERVAL text into tokens, longest match first."""
+    """Split macro-expanded INTERVAL text into tokens, longest match first.
+
+    Every unknown word is reported, not just the first (SPEC §6.2): the result is an
+    :class:`ErrorList` with one diagnostic per unknown word, in order of appearance.
+    """
     pattern = _compiled(names.current_locale())
     tokens: List[Token] = []
+    problems: List[IntervalKeeperError] = []
     pos = 0
     while pos < len(text):
         match = pattern.match(text, pos)
         if match is None:
-            raise _error(f"unexpected character {text[pos]!r}")
+            problems.append(_error(f"unexpected character {text[pos]!r}"))
+            break
         kind = match.lastgroup or ""
         value = match.group()
         start = pos
@@ -108,11 +129,16 @@ def tokenize(text: str) -> List[Token]:
         if kind == "WS":
             continue
         if kind in ("TZPATH", "TZOFF"):
-            resolve_tz(value)  # validates; raises a user-facing error naming the token
+            try:
+                resolve_tz(value)  # validates; raises a user-facing error naming the token
+            except IntervalKeeperError as exc:
+                problems.append(_error(exc.message))
+                break
             tokens.append(Token("TZ", value, start))
         elif kind == "LNAME":
             if names.is_ambiguous(value):
-                raise _error(f"ambiguous month/weekday name {value!r} in the current locale")
+                problems.append(_error(f"ambiguous month/weekday name {value!r} in the current locale"))
+                break
             tokens.append(Token("WORD", value, start))
         elif kind == "WORD":
             folded = value.casefold()
@@ -124,9 +150,13 @@ def tokenize(text: str) -> List[Token]:
                 hint = ""
                 if re.fullmatch(r"[A-Z]{2,5}", value):
                     hint = "; alphabetic time-zone abbreviations are not supported, use an IANA zone ID or a numeric UTC offset"
-                raise _error(f"unknown word {value!r} (undefined macro?){hint}")
+                problems.append(_error(f"unknown word {value!r} (undefined macro?{_locale_hint(value)}){hint}"))
         else:
             tokens.append(Token(kind, value, start))
+    if len(problems) == 1:
+        raise problems[0]
+    if problems:
+        raise ErrorList(problems)
     return tokens
 
 

@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Dict, List, Optional, Tuple, Union as TUnion
 
-from .errors import IntervalKeeperError
+from .errors import ErrorList, IntervalKeeperError
 from . import names
 from .lexer import UNITS, Token, tokenize, word_kind
 
@@ -550,6 +550,8 @@ def parse_interval(text: str, *, path: Optional[str] = None, lineno: Optional[in
         return parser.parse_expr()
     except _Fail as exc:
         raise IntervalKeeperError(path, lineno, str(exc)) from None
+    except ErrorList as exc:
+        raise ErrorList([IntervalKeeperError(path, lineno, error.message) for error in exc.errors]) from None
     except IntervalKeeperError as exc:
         raise IntervalKeeperError(path, lineno, exc.message) from None
 
