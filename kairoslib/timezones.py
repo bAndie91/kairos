@@ -21,6 +21,7 @@ import sys
 from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Mapping, TextIO
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
+import traceback
 
 from .errors import IntervalKeeperError
 
@@ -102,6 +103,7 @@ def default_timezone(
         if zone is not None:
             return zone
     except Exception:
+        traceback.print_exc()
         pass
 
     print("kairos: warning: could not determine system time zone; using UTC", file=error_stream)
