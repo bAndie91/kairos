@@ -138,15 +138,17 @@ Completed in this branch without selecting M5; verification: `python3 -m unittes
 
 ### M5 — Interval lexer and parser → AST (SPEC §6)
 
-- [ ] Lexer with the token order of §6.1 (ISO date before number, `--` before `-`, supported TZ forms, words). Use the M4 timezone-token/reserved-name interface; the parser does not resolve zone objects. Alphabetic timezone abbreviations other than `UTC`/`GMT` are not TZ tokens.
-- [ ] Item kinds and ranges, number classification (< 100 DOM, ≥ 100 YEAR), month/weekday names (full, 3-letter, `Sept`, case-insensitive).
-- [ ] Clause conjunction rules and all clause errors (duplicate kind, DATE vs Y/M/D, impossible dates incl. `Feb 30`, `2026-02-29`, `*-04-31`; `Feb 29` ok).
-- [ ] Comma grouping rule D3 (same-kind continuation) producing terms.
-- [ ] Spans: sides, inheritance of year/month, rollover rules, times on both sides, recurring spans.
-- [ ] Relative forms: `union + duration`, `duration until union`, compound durations, TZ placement.
-- [ ] AST dataclasses: `Clause`, `Span`, `Union`, `RelPlus`, `RelUntil`, defined canonically in `kairoslib/parser.py` and imported by consumers. The parser never evaluates dates against the clock; it only validates.
+- [x] Lexer with the token order of §6.1 (ISO date before number, `--` before `-`, supported TZ forms, words). Use the M4 timezone-token/reserved-name interface; the parser does not resolve zone objects. Alphabetic timezone abbreviations other than `UTC`/`GMT` are not TZ tokens.
+- [x] Item kinds and ranges, number classification (< 100 DOM, ≥ 100 YEAR), month/weekday names (full, 3-letter, `Sept`, case-insensitive).
+- [x] Clause conjunction rules and all clause errors (duplicate kind, DATE vs Y/M/D, impossible dates incl. `Feb 30`, `2026-02-29`, `*-04-31`; `Feb 29` ok).
+- [x] Comma grouping rule D3 (same-kind continuation) producing terms.
+- [x] Spans: sides, inheritance of year/month, rollover rules, times on both sides, recurring spans.
+- [x] Relative forms: `union + duration`, `duration until union`, compound durations, TZ placement.
+- [x] AST dataclasses: `Clause`, `Span`, `Union`, `RelPlus`, `RelUntil`, defined canonically in `kairoslib/parser.py` and imported by consumers. The parser never evaluates dates against the clock; it only validates.
 
 **Acceptance:** every interval string in the brief parses; every parse-error case of V12 fails with a message containing the offending token; table-driven tests `text → AST repr`.
+
+Completed on branch `work/m5-parser` (`kairoslib/lexer.py`, `kairoslib/parser.py`, `tests/test_parser.py`). The lexer owns the shared vocabulary (`RESERVED_WORDS`, `MONTHS`, `WEEKDAYS`, `UNITS`, `is_tz_token`); `macros.py` imports it. The `HHh`/`MMm`/`MMmin` time forms are deliberately rejected pending the open question below, and the "every interval string in the brief" acceptance check is only verified against the intervals quoted in SPEC §13 (the brief's own list is not in the repository; V11 must re-check it).
 
 ### M6 — Range sets and AST evaluation (SPEC §7.1, §9)
 
@@ -250,3 +252,6 @@ This milestone can draft prose and README material during M6, but executable-exa
 - [x] SPEC §8: Cite IANA TZDB and Python `zoneinfo`; explain that zone abbreviations are zone/date-dependent labels, not unique IDs; add local commands for listing IANA zone IDs and inspecting an abbreviation at an instant.
 - [x] SPEC §8.1: legacy IANA IDs that look like abbreviations (`CET`, `EET`, `WET`, `MET`, `EST`, `MST`, `HST`, `PST8PDT`) conflict with "reject bare abbreviations". Resolved: the IANA ID lookup comes first, so those IDs are accepted as zones; only alphabetic names absent from `available_timezones()` are rejected (D14).
 - [ ] Validate the V14 transition expectations against the actual `zoneinfo` behavior on supported Python versions and make any discrepancy an explicit spec decision, not an undocumented implementation adjustment.
+- [ ] SPEC §6.1 lists `HHh`, `MMm` and `MMmin` as TIME tokens, but §6.2 defines the TIME atom only as `H:MM[:SS]` and §9 durations use whole unit words, so their meaning is undefined (`8h` = whole hour 08:00-09:00? `30m` = minute 30 of every hour?). Current behaviour: the lexer produces a `TSHORT` token and the parser rejects it with "not supported yet". Needs an author decision before it is implemented or dropped from §6.1.
+- [ ] Point times: SPEC §13 fixes bare `08:00` as `[08:00:00, 08:01:00)`; it does not say how long `08:00:30` lasts. The parser records `TimeSpec.seconds=True` for that form; proposed rule for M6: a point time written with seconds lasts one second, otherwise one minute.
+- [ ] `UTC+2 hours` (no space) lexes as the zone offset `UTC+2` followed by the word `hours`, while `UTC + 2 hours` is the zone `UTC` plus a duration (longest match, §6.1). Confirm this is acceptable or require whitespace around the relative `+`.
