@@ -148,7 +148,7 @@ Completed in this branch without selecting M5; verification: `python3 -m unittes
 
 **Acceptance:** every interval string in the brief parses; every parse-error case of V12 fails with a message containing the offending token; table-driven tests `text → AST repr`.
 
-Completed on branch `work/m5-parser` (`kairoslib/lexer.py`, `kairoslib/parser.py`, `tests/test_parser.py`). The lexer owns the shared vocabulary (`RESERVED_WORDS`, `MONTHS`, `WEEKDAYS`, `UNITS`, `is_tz_token`); `macros.py` imports it. The `HHh`/`MMm`/`MMmin` time forms are deliberately rejected pending the open question below, and the "every interval string in the brief" acceptance check is only verified against the intervals quoted in SPEC §13 (the brief's own list is not in the repository; V11 must re-check it).
+Completed on branch `work/m5-parser` (`kairoslib/lexer.py`, `kairoslib/parser.py`, `tests/test_parser.py`). The lexer owns the shared vocabulary (`RESERVED_WORDS`, `MONTHS`, `WEEKDAYS`, `UNITS`, `is_tz_token`); `macros.py` imports it. `HHh`/`MMm`/`MMmin` are the `HOUR`/`MINUTE` kinds (D15). The author will extend the parser acceptance cases (the brief's own interval list) in the test suite.
 
 ### M6 — Range sets and AST evaluation (SPEC §7.1, §9)
 
@@ -244,6 +244,7 @@ This milestone can draft prose and README material during M6, but executable-exa
 - D10: Dependencies are stdlib, `python-dateutil`, `tzlocal`, and system `tzdata`.
 - D11: Executable is `kairos`; config is `$XDG_CONFIG_HOME/kairos/intervals.conf`.
 - D12: A missing explicitly named config is an error and is never created.
+- D15: `Nh` is the whole hour `N:*`, `Nm`/`Nmin` is minute `*:N`; separate kinds `HOUR`/`MINUTE` (ranges/lists inclusive, wrapping). See SPEC §6.1-6.2.
 - D14: Alphabetic tokens that are legacy IANA zone IDs (`CET`, `EET`, `EST`, …) resolve as those zones; other bare abbreviations (`CST`, `CEST`, `IST`) are rejected. See SPEC §8.1.
 - D13: `--next-change` searches indefinitely without a `--horizon` option; if there truly is no future change, print nothing.
 
@@ -252,6 +253,6 @@ This milestone can draft prose and README material during M6, but executable-exa
 - [x] SPEC §8: Cite IANA TZDB and Python `zoneinfo`; explain that zone abbreviations are zone/date-dependent labels, not unique IDs; add local commands for listing IANA zone IDs and inspecting an abbreviation at an instant.
 - [x] SPEC §8.1: legacy IANA IDs that look like abbreviations (`CET`, `EET`, `WET`, `MET`, `EST`, `MST`, `HST`, `PST8PDT`) conflict with "reject bare abbreviations". Resolved: the IANA ID lookup comes first, so those IDs are accepted as zones; only alphabetic names absent from `available_timezones()` are rejected (D14).
 - [ ] Validate the V14 transition expectations against the actual `zoneinfo` behavior on supported Python versions and make any discrepancy an explicit spec decision, not an undocumented implementation adjustment.
-- [ ] SPEC §6.1 lists `HHh`, `MMm` and `MMmin` as TIME tokens, but §6.2 defines the TIME atom only as `H:MM[:SS]` and §9 durations use whole unit words, so their meaning is undefined (`8h` = whole hour 08:00-09:00? `30m` = minute 30 of every hour?). Current behaviour: the lexer produces a `TSHORT` token and the parser rejects it with "not supported yet". Needs an author decision before it is implemented or dropped from §6.1.
-- [ ] Point times: SPEC §13 fixes bare `08:00` as `[08:00:00, 08:01:00)`; it does not say how long `08:00:30` lasts. The parser records `TimeSpec.seconds=True` for that form; proposed rule for M6: a point time written with seconds lasts one second, otherwise one minute.
-- [ ] `UTC+2 hours` (no space) lexes as the zone offset `UTC+2` followed by the word `hours`, while `UTC + 2 hours` is the zone `UTC` plus a duration (longest match, §6.1). Confirm this is acceptable or require whitespace around the relative `+`.
+- [x] SPEC §6.1 `HHh`/`MMm`/`MMmin`: resolved (D15). `8h` = `8:*`, `30m`/`30min` = `*:30`; they are the kinds `HOUR`/`MINUTE`, with inclusive wrapping ranges and lists, combinable with `TIME` in one clause (all must hold). Evaluation: each group yields the daily windows, which are intersected.
+- [x] Point times: `08:00` lasts one minute, `08:00:30` lasts exactly one second (SPEC §6.2; `TimeSpec.seconds`).
+- [x] `UTC + 2 hours` is a zone plus a duration; `UTC+2 hours` is an error because `hours` has no number (SPEC §6.2).
