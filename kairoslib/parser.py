@@ -203,16 +203,30 @@ class _Parser:
         return first is not None and first.kind == "NUMBER" and second is not None and word_kind(second) == "UNIT"
 
     def parse_expr(self) -> Expr:
-        parts = [self.parse_part()]
+        parts: List[TUnion[Term, Part]] = [self.parse_part()]
         while self.at("COMMA"):
             self.take()
             if self.at_end():
                 raise _fail("trailing ','")
             parts.append(self.parse_part())
         self.expect_end()
-        return parts[0] if len(parts) == 1 else Combined(tuple(parts))
+        # Consecutive plain terms form one Union; relative parts stay as they are.
+        merged: List[Part] = []
+        run: List[Term] = []
+        for part in parts:
+            if isinstance(part, (Clause, Span)):
+                run.append(part)
+                continue
+            if run:
+                merged.append(Union(tuple(run)))
+                run = []
+            merged.append(part)
+        if run:
+            merged.append(Union(tuple(run)))
+        return merged[0] if len(merged) == 1 else Combined(tuple(merged))
 
-    def parse_part(self) -> Part:
+    def parse_part(self) -> TUnion[Term, Part]:
+        """One term, ``TERM + D``, or ``D until|before|after TERM``: the anchor is a single term (§9)."""
         if self.duration_at():
             duration = self.parse_duration()
             tok = self.peek()
@@ -224,18 +238,17 @@ class _Parser:
                 )
             assert tok is not None
             self.take()
-            if self.at_end():
+            if self.at_end() or self.at("COMMA"):
                 raise _fail(f"{tok.text!r} needs an anchor interval")
-            anchor = self.parse_union()
+            anchor = Union((self.parse_term(),))
             if keyword == "UNTIL":
                 return RelUntil(duration, anchor)
             return RelShift(duration, anchor, -1 if keyword == "BEFORE" else 1)
-        anchor = self.parse_union()
+        term = self.parse_term()
         if self.at("PLUS"):
             self.take()
-            duration = self.parse_duration()
-            return RelPlus(anchor, duration)
-        return anchor
+            return RelPlus(Union((term,)), self.parse_duration())
+        return term
 
     @staticmethod
     def unexpected(tok: Token, after_tz: Optional[str] = None) -> str:
@@ -267,16 +280,6 @@ class _Parser:
         return Duration(tuple(parts))
 
     # -- unions, terms -------------------------------------------------
-    def parse_union(self) -> Union:
-        """Terms joined by commas, up to ``+``, a keyword, the end, or a comma before a duration."""
-        terms: List[Term] = [self.parse_term()]
-        while self.at("COMMA") and not self.duration_at(1):
-            self.take()
-            if self.at_end() or self.at("PLUS"):
-                raise _fail("trailing ','")
-            terms.append(self.parse_term())
-        return Union(tuple(terms))
-
     def at_keyword(self) -> bool:
         """At ``until`` / ``before`` / ``after``: the end of a union (and an error unless a duration led)."""
         tok = self.peek()
