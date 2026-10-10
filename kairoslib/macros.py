@@ -264,7 +264,7 @@ class MacroScope:
             # Warn about each macro variable it refuses, drop it and carry on.
             for variable, (macro_name, value) in macro_vars.items():
                 try:
-                    subprocess.run([shell, "-c", ":"], env={variable: value}, check=False,
+                    subprocess.run(["true"], env={variable: value}, check=False,
                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 except ValueError as exc:
                     print(f"kairos: warning: macro {macro_name!r} is not passed to commands: {exc}", file=sys.stderr)

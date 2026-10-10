@@ -126,7 +126,7 @@ def installed_locales() -> List[str]:
     try:
         done = subprocess.run(
             ["locale", "-a"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, errors="replace", timeout=10, check=False,
+            text=True, errors="replace", check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return []
