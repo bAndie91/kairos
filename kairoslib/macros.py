@@ -14,21 +14,9 @@ from datetime import datetime, timezone
 from typing import Callable, Mapping
 
 from .errors import IntervalKeeperError
+from .lexer import RESERVED_WORDS
 
 _MACRO_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-_MONTHS = {
-    "jan", "january", "feb", "february", "mar", "march", "apr", "april",
-    "may", "jun", "june", "jul", "july", "aug", "august", "sep", "sept",
-    "september", "oct", "october", "nov", "november", "dec", "december",
-}
-_WEEKDAYS = {
-    "mon", "monday", "tue", "tues", "tuesday", "wed", "wednesday", "thu",
-    "thur", "thurs", "thursday", "fri", "friday", "sat", "saturday", "sun",
-    "sunday",
-}
-_DURATION_UNITS = {"second", "seconds", "minute", "minutes", "hour", "hours", "day", "days", "week", "weeks", "month", "months", "year", "years"}
-_RESERVED_MACRO_NAMES = _MONTHS | _WEEKDAYS | _DURATION_UNITS | {"until", "utc", "gmt", "z"}
 
 
 @dataclass
@@ -45,7 +33,7 @@ def validate_macro_name(name: str) -> None:
     """Reject invalid or reserved macro names before they become visible."""
     if not isinstance(name, str) or not _MACRO_NAME_RE.fullmatch(name):
         raise IntervalKeeperError(None, None, f"invalid macro name {name!r}")
-    if name.casefold() in _RESERVED_MACRO_NAMES:
+    if name.casefold() in RESERVED_WORDS:
         raise IntervalKeeperError(None, None, f"macro name {name!r} is reserved")
 
 
