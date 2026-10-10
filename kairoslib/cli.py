@@ -10,6 +10,7 @@ from . import __version__
 from .config import load_config
 from .errors import IntervalKeeperError
 from .evaluate import to_epoch
+from .next_change import format_instant, format_is_offset_aware, next_change
 from .reader import read_config
 from .states import active_states, build_lines
 from .timezones import default_timezone
@@ -89,7 +90,17 @@ def _run(args: argparse.Namespace) -> int:
     if args.check:
         return 0
     if args.next_change:
-        raise IntervalKeeperError(None, None, "--next-change is not implemented yet")
+        change = next_change(lines, at, zone)
+        if change is not None:
+            text, ambiguous = format_instant(change, zone, args.format)
+            if ambiguous and not format_is_offset_aware(args.format):
+                print(
+                    "kairos: warning: the next change falls in a DST fold, so this local time is ambiguous; "
+                    "use --format iso or epoch",
+                    file=sys.stderr,
+                )
+            sys.stdout.write(text + "\n")
+        return 0
 
     names = active_states(lines, at)
     if names:

@@ -11,8 +11,9 @@ independently and ranges that become empty are dropped.
 """
 from __future__ import annotations
 
+import calendar
 from datetime import date, datetime, timezone, tzinfo
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from dateutil.relativedelta import relativedelta
 
@@ -88,6 +89,57 @@ def _day_matches(clause: Clause, d: date) -> bool:
     return True
 
 
+def _expanded(ranges: Sequence[Tuple[int, int]], low: int, high: int) -> List[int]:
+    """Sorted values of ``low..high`` selected by inclusive, possibly wrapping *ranges*."""
+    return [v for v in range(low, high + 1) if _in_any(v, ranges)]
+
+
+def _date_atom_values(atoms, attr: str) -> Optional[set]:
+    values = {getattr(a, attr) for a in atoms}
+    return None if None in values else values
+
+
+def matching_days(clause: Clause, first: int, last: int) -> Iterator[date]:
+    """Dates (ordinals ``first..last``) the clause's day selectors accept, in order.
+
+    Jumps over years and months that cannot match instead of testing every day,
+    so a sparse clause such as ``Feb 29`` costs one step per year.
+    """
+    first, last = max(first, 1), min(last, date.max.toordinal())
+    if first > last:
+        return
+    d_first, d_last = date.fromordinal(first), date.fromordinal(last)
+    year_ranges = clause.years
+    atoms = clause.dates
+    atom_years = _date_atom_values(atoms, "year") if atoms else None
+    atom_months = _date_atom_values(atoms, "month") if atoms else None
+    atom_days = _date_atom_values(atoms, "day") if atoms else None
+    month_set = _expanded(clause.months, 1, 12) if clause.months else list(range(1, 13))
+    if atom_months is not None:
+        month_set = [m for m in month_set if m in atom_months]
+    dom_set = _expanded(clause.doms, 1, 31) if clause.doms else None
+    if atom_days is not None:
+        dom_set = [d for d in (dom_set if dom_set is not None else range(1, 32)) if d in atom_days]
+    for year in range(d_first.year, d_last.year + 1):
+        if year_ranges and not any(a <= year <= b for a, b in year_ranges):
+            continue
+        if atom_years is not None and year not in atom_years:
+            continue
+        for month in month_set:
+            month_len = calendar.monthrange(year, month)[1]
+            start = date(year, month, 1).toordinal()
+            if start + month_len - 1 < first or start > last:
+                continue
+            days = range(1, month_len + 1) if dom_set is None else [d for d in dom_set if d <= month_len]
+            for dom in days:
+                ordinal = start + dom - 1
+                if ordinal < first or ordinal > last:
+                    continue
+                day = date.fromordinal(ordinal)
+                if _day_matches(clause, day):
+                    yield day
+
+
 def day_windows(clause: Clause) -> RangeSet:
     """Local time-of-day windows (seconds after the start day's midnight) of a clause.
 
@@ -150,10 +202,7 @@ def _eval_clause(clause: Clause, lo: int, hi: int, ctx: _Context) -> RangeSet:
     last = min(date.max.toordinal(), _local_date(hi - 1, zone).toordinal() + 1)
     windows = day_windows(clause).ranges
     out: List[Tuple[int, int]] = []
-    for ordinal in range(first, last + 1):
-        day = date.fromordinal(ordinal)
-        if not _day_matches(clause, day):
-            continue
+    for day in matching_days(clause, first, last):
         for a, b in windows:
             start = _local_instant(day, a, zone)
             end = _local_instant(day, b, zone)
@@ -268,19 +317,32 @@ def _eval_plus(expr: RelPlus, lo: int, hi: int, ctx: _Context) -> RangeSet:
     return RangeSet(out).clip(lo, hi)
 
 
+def _is_point_clause(term: Term) -> bool:
+    """A bare point time (``08:00``): SPEC §9 calls it an instance of length zero."""
+    return (
+        isinstance(term, Clause) and bool(term.times) and not term.hours and not term.minutes
+        and all(t.end is None for t in term.times)
+    )
+
+
 def _eval_until(expr: RelUntil, lo: int, hi: int, ctx: _Context) -> RangeSet:
     """``D until ANCHOR``: ``[e - D, e)`` for every anchor instance ending at ``e``."""
     zone = _anchor_zone(expr.anchor, ctx)
     reach = _duration_bound(expr.duration) + _PAD
     window_hi = min(MAX_T, hi + reach)
+    point_terms = tuple(t for t in expr.anchor.terms if _is_point_clause(t))
+    other = Union(tuple(t for t in expr.anchor.terms if not _is_point_clause(t)))
     while True:
-        anchor = _eval_union(expr.anchor, lo, window_hi, ctx)
+        anchor = _eval_union(other, lo, window_hi, ctx) if other.terms else EMPTY
         truncated = bool(anchor) and anchor.ranges[-1][1] == window_hi and window_hi < MAX_T
         if not truncated or window_hi - hi >= _MAX_LOOKBACK:
             break
         window_hi = min(MAX_T, hi + 2 * (window_hi - hi))
+    ends = [end for _start, end in anchor]
+    if point_terms:
+        ends.extend(start for start, _end in _eval_union(Union(point_terms), lo, window_hi, ctx))
     out: List[Tuple[int, int]] = []
-    for _start, end in anchor:
+    for end in ends:
         begin = _shift(end, expr.duration, -1, zone)
         if begin is not None and begin < end:
             out.append((begin, end))
@@ -302,4 +364,4 @@ def evaluate(expr: Expr, lo: int, hi: int, default_tz: tzinfo) -> RangeSet:
     raise TypeError(f"cannot evaluate {type(expr).__name__}")
 
 
-__all__ = ["day_windows", "evaluate", "from_epoch", "to_epoch"]
+__all__ = ["day_windows", "evaluate", "from_epoch", "matching_days", "to_epoch"]

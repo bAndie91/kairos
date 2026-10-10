@@ -191,24 +191,30 @@ Completed (`kairoslib/states.py`, `kairoslib/cli.py`, small changes in `macros.p
 
 ### M8 — `--next-change` (SPEC §10)
 
-- [ ] Implement candidate boundary generation and search in `kairoslib/next_change.py`; implement `--format` (`strftime`, `iso`, `epoch`) and indefinite `--next-change` search. Do not add a horizon option.
-- [ ] Implement AST-derived candidate-boundary streams: clauses jump directly to matching local dates/times; spans emit endpoints;
+- [x] Implement candidate boundary generation and search in `kairoslib/next_change.py`; implement `--format` (`strftime`, `iso`, `epoch`) and indefinite `--next-change` search. Do not add a horizon option.
+- [x] Implement AST-derived candidate-boundary streams: clauses jump directly to matching local dates/times; spans emit endpoints;
       relative intervals emit duration-adjusted anchor-instance boundaries. Merge candidates chronologically and compare the complete
       reported state set immediately before and at each candidate, ignoring boundaries hidden by overlapping ranges or same-name unions.
-- [ ] Separate finite exceptions from recurring terms. Track the end of explicit-year contributions and every finite relative-interval
+- [x] Separate finite exceptions from recurring terms. Track the end of explicit-year contributions and every finite relative-interval
       duration tail before treating the remaining schedule as recurring.
-- [ ] Implement a no-future-change proof: recurring Gregorian calendar patterns (including weekday/leap-day selectors and calendar
+- [x] Implement a no-future-change proof: recurring Gregorian calendar patterns (including weekday/leap-day selectors and calendar
       durations) repeat on the 400-year / 146,097-day cycle. Include each used TZif zone's future-rule footer in the recurrence
       fingerprint: after explicit transitions, use its recurring POSIX rule, or its final offset if no footer rule exists. It is acceptable
       to parse TZif recurrence metadata to establish the cycle, but use `zoneinfo` for actual conversions. Only use a cycle as proof
       after finite exceptions/tails end and timezone recurrence fingerprints align. Search one complete combined recurrence cycle
       for real changes; if none occur, conclude there is no future change in the representable datetime domain.
-- [ ] No arbitrary horizon and no second-by-second or date-by-date brute-force scan. Python `datetime` represents years 1–9999;
+- [x] No arbitrary horizon and no second-by-second or date-by-date brute-force scan. Python `datetime` represents years 1–9999;
       search until the next real change is found or the recurrence proof establishes none remains. If none remains, empty stdout,
       exit 0.
 
 **Acceptance:** all `--next-change` columns of V1–V8 and the no-future-change cases pass; V13 brute-force oracle agrees; V14 DST/bare-time boundary tests pass. A 100-line config with a leap-day state (`Feb 29`) completes in under 5 s without scanning every second or every date. Include a case where overlapping same-name intervals create candidate boundaries but no reported state change.
 
+Completed on branch `work/m8-next-change` (`kairoslib/next_change.py`, plus `matching_days` in `evaluate.py`, child evaluation restricted to the parent's set in `states.py`, `rules_start`/`recurrence_start` in `timezones.py`, `tests/test_next_change.py`). How it works and what to review:
+
+- A reported-state change is exactly a boundary of some `U(name)` (a merged `RangeSet`), so same-name overlaps/adjacency and hidden lines are skipped by construction; the search takes the first boundary `> at` over consecutive, growing segments evaluated from the AST (no per-second or per-date scan; clauses jump to matching dates via `matching_days`).
+- Termination: `finite_end` (last explicit year + every relative duration tail) and each used zone's `rules_start` (last explicit TZif transition + 1 year, parsed from the TZif file; conversions still use `zoneinfo`) give the start of the recurring regime; one 146,097-day cycle after the latest of those and `at` is searched, then "no change" is concluded. The domain end is `MAX_T` (two days before 9999-12-31, a margin for zone-offset conversion), so changes in the very last two days of year 9999 are out of reach.
+- Measured: the 100-line leap-day config takes about 0.1 s; V13 is a minute-stepping oracle for near answers (<= 3 days) and a both-sides-plus-sampling check for far ones.
+- `--format`: `iso`, `epoch` or a strftime string; a fold-ambiguous local result prints a stderr warning unless the format carries the offset (`iso`, `epoch`, `%z`, `%Z`).
 ### M9 — Default config text, docs, polish
 
 This milestone can draft prose and README material during M6, but executable-example checks and final acceptance depend on M1 and M7 being integrated.
@@ -277,3 +283,5 @@ This milestone can draft prose and README material during M6, but executable-exa
 - [ ] SPEC §5.3 says macro names may contain spaces and punctuation (`Mary's birthday`) and that longer names are tried first, but §4.1 (and the reader) require `[A-Za-z_][A-Za-z0-9_]*`, and `NAME := …` lines with other names are rejected ("invalid macro name"). The implementation follows §4.1; the author should confirm or extend the grammar.
 - [ ] SPEC V12 lists a bare `X := ! false` as an error, but D4 makes command macros lazy, so an unused one never runs in default mode. Implemented: it is an error when used, and under `--check` (which runs all commands, §2). Confirm that is enough for V12.
 - [ ] `tzlocal` could not be installed in the development sandbox (no distribution reachable); `default_timezone` therefore fell back to UTC with a warning there. Tests always pass `--tz`, so they are unaffected.
+- [ ] SPEC V14's last paragraph says `08:00 + 2 hours` "begins at 10:00:00", but §9 defines `ANCHOR + D` as `[s, s + D)` from the instance start (`1-7 Mon + 5 day` starts on the Monday). Resolved in favour of §9: the result is `[08:00, 10:00)`; the V14 sentence presumably means "ends at 10:00:00". Please confirm and fix the sentence, or tell me if the intent is different.
+- [ ] The spec now requires locale-aware month/weekday names (no hand-maintained tables, SPEC §5/§12 locale notes), but `lexer.py` still has English tables (`MONTHS`, `WEEKDAYS`) that `macros.py` and the parser use. No PLAN task covers this yet.
