@@ -17,7 +17,7 @@ from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from dateutil.relativedelta import relativedelta
 
-from .parser import Clause, Duration, Expr, RelPlus, RelUntil, Span, Term, Union
+from .parser import Clause, Duration, Expr, RelPlus, RelShift, RelUntil, Span, Term, Union
 from .ranges import EMPTY, RangeSet
 from .timezones import resolve_tz
 
@@ -349,6 +349,40 @@ def _eval_until(expr: RelUntil, lo: int, hi: int, ctx: _Context) -> RangeSet:
     return RangeSet(out).clip(lo, hi)
 
 
+def _eval_shift(expr: RelShift, lo: int, hi: int, ctx: _Context) -> RangeSet:
+    """``D before/after ANCHOR``: every anchor instance ``[s, e)`` moved to ``[s ± D, e ± D)``.
+
+    Both endpoints are shifted independently (calendar units on the wall clock, then elapsed
+    units), so the instance keeps its length and time of day; a bare point time keeps its
+    one-minute length. Only the anchor side that could be cut off by the window is widened.
+    """
+    zone = _anchor_zone(expr.anchor, ctx)
+    reach = _duration_bound(expr.duration) + _PAD
+    if expr.sign > 0:  # after: the anchor lies before the result; an instance may begin long before lo
+        window_lo, window_hi = _clamp(lo - reach), hi
+        while True:
+            anchor = _eval_union(expr.anchor, window_lo, window_hi, ctx)
+            truncated = bool(anchor) and anchor.ranges[0][0] == window_lo and window_lo > MIN_T
+            if not truncated or lo - window_lo >= _MAX_LOOKBACK:
+                break
+            window_lo = _clamp(lo - 2 * (lo - window_lo))
+    else:  # before: the anchor lies after the result; an instance may end long after hi
+        window_lo, window_hi = lo, min(MAX_T, hi + reach)
+        while True:
+            anchor = _eval_union(expr.anchor, window_lo, window_hi, ctx)
+            truncated = bool(anchor) and anchor.ranges[-1][1] == window_hi and window_hi < MAX_T
+            if not truncated or window_hi - hi >= _MAX_LOOKBACK:
+                break
+            window_hi = min(MAX_T, hi + 2 * (window_hi - hi))
+    out: List[Tuple[int, int]] = []
+    for start, end in anchor:
+        new_start = _shift(start, expr.duration, expr.sign, zone)
+        new_end = _shift(end, expr.duration, expr.sign, zone)
+        if new_start is not None and new_end is not None and new_start < new_end:
+            out.append((new_start, new_end))
+    return RangeSet(out).clip(lo, hi)
+
+
 def evaluate(expr: Expr, lo: int, hi: int, default_tz: tzinfo) -> RangeSet:
     """Return ``expr ∩ [lo, hi)`` as a RangeSet of POSIX seconds."""
     lo, hi = _clamp(lo), _clamp(hi)
@@ -361,6 +395,8 @@ def evaluate(expr: Expr, lo: int, hi: int, default_tz: tzinfo) -> RangeSet:
         return _eval_plus(expr, lo, hi, ctx)
     if isinstance(expr, RelUntil):
         return _eval_until(expr, lo, hi, ctx)
+    if isinstance(expr, RelShift):
+        return _eval_shift(expr, lo, hi, ctx)
     raise TypeError(f"cannot evaluate {type(expr).__name__}")
 
 

@@ -235,7 +235,7 @@ Names are case-sensitive for macros.
 
 * names are case sensitive and allowed to have space, punctuation, etc. (eg. `Mary's birthday`)
 * longer macro names are tried first, so `birthday` and `Mary's birthday` can coexist.
-* Reserved (case-insensitive) → error: month names and weekday names recognized in the effective `LC_TIME` locale (full and abbreviated forms supplied by the locale/date-time library), duration units (§9), `until`, `UTC`, `GMT`, and `Z`. The month/weekday vocabulary is locale-dependent and must be derived from the same locale-aware date/time facilities used to parse these names; do not hard-code English names or maintain a separate alias list. Other timezone-looking strings are TZ tokens only if they match §8.1; there is no abbreviation table.
+* Reserved (case-insensitive) → error: month names and weekday names recognized in the effective `LC_TIME` locale (full and abbreviated forms supplied by the locale/date-time library), duration units (§9), `until`, `before`, `after`, `UTC`, `GMT`, and `Z`. The month/weekday vocabulary is locale-dependent and must be derived from the same locale-aware date/time facilities used to parse these names; do not hard-code English names or maintain a separate alias list. Other timezone-looking strings are TZ tokens only if they match §8.1; there is no abbreviation table.
 * A macro defined at indentation 0 is visible to all following lines. A macro defined at deeper indentation, as a child of
   line P, is visible to the lines that follow it inside P's subtree. Leaving the subtree ends the scope.
 * Redefining a name that is **visible** at that point (same scope or enclosing scope) → error (D8). Two sibling subtrees may define the same name.
@@ -358,7 +358,9 @@ A list may not mix point times and time ranges. The union of all terms is the in
 interval = expr ;                         (* leading "!" is handled by the line, §4.2 *)
 expr     = union
          | union "+" duration             (* §9 *)
-         | duration "until" union ;
+         | duration "until" union
+         | duration "before" union       (* §9.1 *)
+         | duration "after" union ;      (* §9.1 *)
 union    = term { "," term } ;            (* comma grouping per §6.4 *)
 term     = span | clause ;
 span     = dateside "--" dateside [ TZ ] ;
@@ -462,6 +464,20 @@ DURATION until ANCHOR        e.g.  40 days until Dec 24
   In a pair list, calendar units are applied first, then elapsed units.
 * The result is an ordinary set: it may be negated, have children, carry a STATE.
 * Implementation note: an instance may begin long before the evaluation window; evaluation must look back until the first instance.
+
+### 9.1 `before` and `after`: shifted anchors
+
+```
+DURATION before ANCHOR       e.g.  40 days before Dec 24
+DURATION after ANCHOR        e.g.  10 days after Oct 1
+```
+
+* `D before ANCHOR` / `D after ANCHOR` is plain date/time arithmetic written out: every instance `[s, e)` of the anchor is moved **as a whole** to `[s − D, e − D)` (`before`) or `[s + D, e + D)` (`after`). The anchor's own length is kept, and its time of day is kept too.
+  Thus `40 days before Dec 24` is Nov 14 (one day long, just like `Nov 14`), `10 days after Oct 1` is Oct 11, `2 days before Apr 10 12:00` is `Apr 8 12:00` (i.e. `[Apr 8 12:00, Apr 8 12:01)`), `3 hours after 08:00` is `11:00`, and `1 year before Dec 20 -- Jan 10` is the whole span moved back one year.
+* Unlike `+` and `until`, which build a run of length `D` from one end of the anchor, these forms select the shifted anchor itself. A bare point time keeps its one-minute length (§6.2); it is not reduced to a zero-length instance.
+* DURATION, units, ANCHOR, zone choice and calendar-vs-elapsed arithmetic are exactly as in §9; both endpoints of an instance are shifted independently (so a day-long instance stays one calendar day long across a DST change, and `1 month before Mar 31` ends at the clamped date given by `dateutil.relativedelta`).
+* The result is an ordinary set, so it is narrowed, negated, or given children like any other line: a child `08:00-09:00` under `2 days before Apr 10` selects 08:00–09:00 on Apr 8.
+* An instance whose shifted endpoints coincide or invert is dropped.
 
 ---
 
@@ -597,7 +613,18 @@ at 2026-02-10 → `first quarter`. Whole-word rule: `mary := Mon` followed by `a
   - `01:00-04:00 = crossing` spans `[2026-10-24 23:00:00, 2026-10-25 03:00:00)` UTC: active at 00:30:00, 01:30:00, and 02:30:00 UTC, inactive at 03:00:00 UTC.
   - `Mon-Fri 08:00-16:00 = work`: verify local wall-clock endpoints remain 08:00–16:00 and that UTC boundaries are one hour later than in summer after the fall-back.
 
-Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` begins at 10:00:00.
+Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` is `[08:00:00, 10:00:00)` (§9: the result starts at the instance start).
+
+**V16** `before` / `after` (`tz=Europe/Budapest`, year 2026):
+```
+40 days before Dec 24 = early
+10 days after Oct 1 = later
+2 days before Apr 10 12:00 = dinner
+3 hours after 08:00 = brunch
+1 month before Mar 31 = clamped
+1 year before Dec 20 -- Jan 10 = last year
+```
+`early` is `[2026-11-14 00:00, 2026-11-15 00:00)` (active 2026-11-14 12:00:00, inactive 2026-11-13 23:59:59 and 2026-11-15 00:00:00); `later` is exactly 2026-10-11; `dinner` is `[2026-04-08 12:00:00, 2026-04-08 12:01:00)`; `brunch` is `[11:00:00, 11:01:00)` every day; `clamped` is Feb 28, 2026 (the instance `[Mar 31, Apr 1)` becomes `[Feb 28, Mar 1)`, because Mar 31 minus one month clamps to Feb 28); `last year` is `[2025-12-20, 2026-01-11)` and `[2024-12-20, 2025-01-11)` in the year before. `--next-change` at 2026-10-09 12:00 with only `early` is `2026-11-14 00:00:00`, and at 2026-11-15 00:00:00 the next one is `2027-11-14 00:00:00`. An anchor-narrowing check: with `2 days before Apr 10` as a parent and a child `08:00-09:00 = x`, only 2026-04-08 08:00–09:00 shows `x`.
 
 **V15** locale-sensitive month and weekday names (run in subprocesses with environment variables set before Python starts; skip if the requested locale is not installed):
 

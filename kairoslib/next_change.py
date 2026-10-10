@@ -27,7 +27,7 @@ from datetime import datetime, timezone, tzinfo
 from typing import Iterable, Iterator, List, Optional, Sequence, Set, Tuple
 
 from .evaluate import MAX_T, MIN_T, _duration_bound, from_epoch, to_epoch
-from .parser import Clause, Expr, RelPlus, RelUntil, Span, Union
+from .parser import Clause, Expr, RelPlus, RelShift, RelUntil, Span, Union
 from .ranges import RangeSet
 from .states import Line, reported_sets
 from .timezones import recurrence_start, resolve_tz
@@ -69,7 +69,7 @@ def finite_end(exprs: Iterable[Expr]) -> int:
         for term in _terms(expr):
             for year in _explicit_years(term):
                 last_year = max(last_year, year)
-        if isinstance(expr, (RelPlus, RelUntil)):
+        if isinstance(expr, (RelPlus, RelUntil, RelShift)):
             tail = max(tail, _duration_bound(expr.duration))
     if not last_year:
         return 0
