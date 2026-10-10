@@ -209,6 +209,20 @@ class MacroScope:
         finally:
             owner._resolving.discard(name)
 
+    @staticmethod
+    def _spawn(argv: list[str], env: Mapping[str, str]) -> "subprocess.CompletedProcess[str]":
+        return subprocess.run(
+            argv,
+            check=False,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stderr=None,
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
     def _run_command_macro(
         self,
         definition: MacroDefinition,
@@ -224,17 +238,14 @@ class MacroScope:
             process_env.update(env)
 
         # KAIROS_MACRO_<NAME> for every macro visible where this one was defined, NAME as is.
+        macro_vars: dict[str, tuple[str, str]] = {}
         for macro_name in definition.visible_names:
             if macro_name in self._resolving:
                 continue
             value = self.resolve(macro_name, now=now, context=context, allow_run=allow_run)
-            variable = macro_env_name(macro_name)
-            if "=" in variable or "\0" in variable or "\0" in value:
-                # Cannot be represented in an environment: leave it out (SPEC §5.2), do not fail.
-                print(f"kairos: warning: macro {macro_name!r} is not passed to commands: "
-                      "it cannot be an environment variable", file=sys.stderr)
-                continue
-            process_env[variable] = value
+            macro_vars[macro_env_name(macro_name)] = (macro_name, value)
+
+        process_env.update({variable: value for variable, (_name, value) in macro_vars.items()})
 
         when = datetime.now(timezone.utc) if now is None else now
         if when.tzinfo is None:
@@ -245,17 +256,20 @@ class MacroScope:
             process_env[f"KAIROS_INTERVAL_{level}"] = interval
             process_env[f"KAIROS_STATE_{level}"] = state
 
-        completed = subprocess.run(
-            [shell, "-c", definition.value],
-            check=False,
-            env=process_env,
-            stdin=subprocess.DEVNULL,
-            stderr=None,
-            stdout=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        argv = [shell, "-c", definition.value]
+        try:
+            completed = self._spawn(argv, process_env)
+        except ValueError:
+            # The runtime refused some environment variable (no special cases here: it tells us).
+            # Warn about each macro variable it refuses, drop it and carry on.
+            for variable, (macro_name, value) in macro_vars.items():
+                try:
+                    subprocess.run([shell, "-c", ":"], env={variable: value}, check=False,
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except ValueError as exc:
+                    print(f"kairos: warning: macro {macro_name!r} is not passed to commands: {exc}", file=sys.stderr)
+                    del process_env[variable]
+            completed = self._spawn(argv, process_env)
         if completed.returncode != 0:
             raise IntervalKeeperError(
                 None, definition.lineno,

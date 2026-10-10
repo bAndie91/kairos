@@ -178,5 +178,18 @@ class MacroTests(unittest.TestCase):
         self.assertEqual(scope.resolve("E"), "first|second|Jun 1")
 
 
+    def test_a_variable_the_runtime_refuses_is_a_warning_not_an_error(self) -> None:
+        import contextlib, io
+        scope = MacroScope()
+        scope.define("bad\0name", "x")  # NUL cannot be in an environment variable name
+        scope.define("good", "y")
+        scope.define("E", "! echo ok $KAIROS_MACRO_good", command=True)
+        captured = io.StringIO()
+        with contextlib.redirect_stderr(captured):
+            self.assertEqual(scope.resolve("E"), "ok y")
+        self.assertIn("warning", captured.getvalue())
+        self.assertIn("bad", captured.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
