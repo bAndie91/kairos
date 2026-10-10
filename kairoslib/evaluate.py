@@ -17,7 +17,7 @@ from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from dateutil.relativedelta import relativedelta
 
-from .parser import Clause, Duration, Expr, RelPlus, RelShift, RelUntil, Span, Term, Union
+from .parser import Clause, Combined, Duration, Expr, RelPlus, RelShift, RelUntil, Span, Term, Union
 from .ranges import EMPTY, RangeSet
 from .timezones import resolve_tz
 
@@ -389,8 +389,17 @@ def evaluate(expr: Expr, lo: int, hi: int, default_tz: tzinfo) -> RangeSet:
     if lo >= hi:
         return EMPTY
     ctx = _Context(default_tz)
+    return _eval_expr(expr, lo, hi, ctx)
+
+
+def _eval_expr(expr: Expr, lo: int, hi: int, ctx: _Context) -> RangeSet:
     if isinstance(expr, Union):
         return _eval_union(expr, lo, hi, ctx)
+    if isinstance(expr, Combined):
+        result = EMPTY
+        for part in expr.parts:
+            result = result.union(_eval_expr(part, lo, hi, ctx))
+        return result
     if isinstance(expr, RelPlus):
         return _eval_plus(expr, lo, hi, ctx)
     if isinstance(expr, RelUntil):

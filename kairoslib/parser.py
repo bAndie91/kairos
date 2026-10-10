@@ -112,7 +112,16 @@ class RelShift:
     sign: int
 
 
-Expr = TUnion[Union, RelPlus, RelUntil, RelShift]
+Part = TUnion[Union, RelPlus, RelUntil, RelShift]
+
+
+@dataclass(frozen=True)
+class Combined:
+    """Several comma-separated parts (SPEC §9.2): the union of the parts."""
+    parts: Tuple[Part, ...]
+
+
+Expr = TUnion[Union, RelPlus, RelUntil, RelShift, Combined]
 
 _KIND_FIELD = {
     "YEAR": "years", "MONTH": "months", "DOM": "doms",
@@ -188,9 +197,23 @@ class _Parser:
         return wk if wk in ("MONTH", "WEEKDAY") else None
 
     # -- expressions ---------------------------------------------------
+    def duration_at(self, offset: int = 0) -> bool:
+        """At ``NUMBER unit``: the start of a duration (and so never a list item)."""
+        first, second = self.peek(offset), self.peek(offset + 1)
+        return first is not None and first.kind == "NUMBER" and second is not None and word_kind(second) == "UNIT"
+
     def parse_expr(self) -> Expr:
-        first, second = self.peek(), self.peek(1)
-        if first is not None and first.kind == "NUMBER" and second is not None and word_kind(second) == "UNIT":
+        parts = [self.parse_part()]
+        while self.at("COMMA"):
+            self.take()
+            if self.at_end():
+                raise _fail("trailing ','")
+            parts.append(self.parse_part())
+        self.expect_end()
+        return parts[0] if len(parts) == 1 else Combined(tuple(parts))
+
+    def parse_part(self) -> Part:
+        if self.duration_at():
             duration = self.parse_duration()
             tok = self.peek()
             keyword = None if tok is None else word_kind(tok)
@@ -204,7 +227,6 @@ class _Parser:
             if self.at_end():
                 raise _fail(f"{tok.text!r} needs an anchor interval")
             anchor = self.parse_union()
-            self.expect_end()
             if keyword == "UNTIL":
                 return RelUntil(duration, anchor)
             return RelShift(duration, anchor, -1 if keyword == "BEFORE" else 1)
@@ -212,9 +234,7 @@ class _Parser:
         if self.at("PLUS"):
             self.take()
             duration = self.parse_duration()
-            self.expect_end()
             return RelPlus(anchor, duration)
-        self.expect_end()
         return anchor
 
     @staticmethod
@@ -248,11 +268,13 @@ class _Parser:
 
     # -- unions, terms -------------------------------------------------
     def parse_union(self) -> Union:
-        terms: List[Term] = []
-        while True:
+        """Terms joined by commas, up to ``+``, a keyword, the end, or a comma before a duration."""
+        terms: List[Term] = [self.parse_term()]
+        while self.at("COMMA") and not self.duration_at(1):
+            self.take()
+            if self.at_end() or self.at("PLUS"):
+                raise _fail("trailing ','")
             terms.append(self.parse_term())
-            if self.at_end() or self.at("PLUS") or self.at_keyword():
-                break
         return Union(tuple(terms))
 
     def at_keyword(self) -> bool:
@@ -274,10 +296,6 @@ class _Parser:
         if any(t.kind == "DASHDASH" for t in self.toks[self.i:end]):
             term: Term = self.parse_span(self.toks[self.i:end])
             self.i = end
-            if self.at("COMMA"):
-                self.take()
-                if self.at_end() or self.at("PLUS"):
-                    raise _fail("trailing ','")
             return term
         return self.parse_clause()
 
@@ -303,10 +321,6 @@ class _Parser:
             if name in fields:
                 raise _fail(f"duplicate {kind} item in one clause (join values with ',' to make a list)")
             fields[name] = values
-        if self.at("COMMA"):
-            self.take()
-            if self.at_end() or self.at("PLUS"):
-                raise _fail("trailing ','")
         if not fields:
             tok = self.peek()
             if tok is not None and self.at_keyword():
@@ -321,7 +335,7 @@ class _Parser:
         values = []
         while True:
             values.append(self.parse_value(kind))
-            if self.at("COMMA") and self.kind_of(self.peek(1)) == kind:
+            if self.at("COMMA") and self.kind_of(self.peek(1)) == kind and not self.duration_at(1):
                 self.take()
                 continue
             break
@@ -538,6 +552,6 @@ def parse_interval(text: str, *, path: Optional[str] = None, lineno: Optional[in
 
 
 __all__ = [
-    "Clause", "DateAtom", "DateSide", "Duration", "Expr", "RelPlus", "RelShift", "RelUntil",
+    "Clause", "Combined", "DateAtom", "DateSide", "Duration", "Expr", "Part", "RelPlus", "RelShift", "RelUntil",
     "Span", "TimeSpec", "Union", "parse_interval",
 ]

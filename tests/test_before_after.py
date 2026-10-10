@@ -105,10 +105,6 @@ class V16(unittest.TestCase):
     def test_instances_are_maximal_contiguous_ranges(self) -> None:
         self.assertEqual(spans("1 day after Dec 24,Dec 25"), [("2026-12-25 00:00", "2026-12-27 00:00")])
 
-    def test_relative_forms_cannot_be_union_members(self) -> None:
-        with self.assertRaises(IntervalKeeperError):
-            parse_interval("2 days before Apr 10, 3 days after Apr 10")
-
     def test_anchor_far_from_the_window(self) -> None:
         # the anchor instance lies long after / before the evaluation window
         self.assertEqual(spans("11 months before 2030-05-01", "2029-05-30 00:00", "2029-06-02 00:00"), [("2029-06-01 00:00", "2029-06-02 00:00")])

@@ -27,7 +27,7 @@ from datetime import datetime, timezone, tzinfo
 from typing import Iterable, Iterator, List, Optional, Sequence, Set, Tuple
 
 from .evaluate import MAX_T, MIN_T, _duration_bound, from_epoch, to_epoch
-from .parser import Clause, Expr, RelPlus, RelShift, RelUntil, Span, Union
+from .parser import Clause, Combined, Expr, RelPlus, RelShift, RelUntil, Span, Union
 from .ranges import RangeSet
 from .states import Line, reported_sets
 from .timezones import recurrence_start, resolve_tz
@@ -39,10 +39,19 @@ _FIRST_SEGMENT = 2 * 86400
 _GROWTH = 4
 
 
+def _parts(expr: Expr) -> Iterator:
+    """The parts of an expression: itself, or each part of a comma-separated combination."""
+    if isinstance(expr, Combined):
+        yield from expr.parts
+    else:
+        yield expr
+
+
 def _terms(expr: Expr) -> Iterator:
     """Every clause/span of an expression, including relative anchors."""
-    union = expr if isinstance(expr, Union) else expr.anchor
-    yield from union.terms
+    for part in _parts(expr):
+        union = part if isinstance(part, Union) else part.anchor
+        yield from union.terms
 
 
 def _explicit_years(term) -> Iterator[int]:
@@ -69,8 +78,9 @@ def finite_end(exprs: Iterable[Expr]) -> int:
         for term in _terms(expr):
             for year in _explicit_years(term):
                 last_year = max(last_year, year)
-        if isinstance(expr, (RelPlus, RelUntil, RelShift)):
-            tail = max(tail, _duration_bound(expr.duration))
+        for part in _parts(expr):
+            if isinstance(part, (RelPlus, RelUntil, RelShift)):
+                tail = max(tail, _duration_bound(part.duration))
     if not last_year:
         return 0
     if last_year >= 9999:
