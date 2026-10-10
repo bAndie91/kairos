@@ -100,6 +100,64 @@ class ClauseTests(unittest.TestCase):
         self.assertEqual(parse_interval("Mon CET").terms[0].tz, "CET")
 
 
+class HourMinuteTests(unittest.TestCase):
+    """`8h` is `8:*` (whole hour 8), `30m`/`30min` is `*:30` (minute 30 of every hour)."""
+
+    def test_hour_and_minute_items(self) -> None:
+        cases = {
+            "8h": one(hours=((8, 8),)),
+            "8h-12h": one(hours=((8, 12),)),
+            "22h-2h": one(hours=((22, 2),)),
+            "8h,9h,13h": one(hours=((8, 8), (9, 9), (13, 13))),
+            "30m": one(minutes=((30, 30),)),
+            "30min": one(minutes=((30, 30),)),
+            "50m-10m": one(minutes=((50, 10),)),
+            "Mon 8h 30m": one(weekdays=((0, 0),), hours=((8, 8),), minutes=((30, 30),)),
+            "8h 12:00-13:00": one(hours=((8, 8),), times=(TimeSpec(12 * H, 13 * H),)),
+            "0h": one(hours=((0, 0),)),
+            "59min": one(minutes=((59, 59),)),
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(parse_interval(text), expected)
+
+    def test_hour_minute_comma_rule(self) -> None:
+        # same-kind continuation: hours stay a list, a minute starts a new term
+        self.assertEqual(parse_interval("8h,30m"), Union((clause(hours=((8, 8),)), clause(minutes=((30, 30),)))))
+
+    def test_relative_and_zone_with_hours(self) -> None:
+        self.assertEqual(
+            parse_interval("8h + 30 minutes"),
+            RelPlus(one(hours=((8, 8),)), Duration(((30, "minute"),))),
+        )
+        self.assertEqual(parse_interval("8h Europe/Berlin").terms[0].tz, "Europe/Berlin")
+
+    def test_point_time_with_seconds(self) -> None:
+        # `8:00:30` lasts one whole second; `08:00` lasts one minute (evaluate.py).
+        self.assertEqual(parse_interval("8:00:30"), one(times=(TimeSpec(8 * H + 30, None, True),)))
+        self.assertEqual(parse_interval("08:00"), one(times=(TimeSpec(8 * H, None, False),)))
+
+
+class ZoneOffsetVersusDurationTests(unittest.TestCase):
+    def test_spaced_plus_is_a_duration(self) -> None:
+        parsed = parse_interval("08:00 UTC + 2 hours")
+        self.assertIsInstance(parsed, RelPlus)
+        self.assertEqual(parsed.anchor.terms[0].tz, "UTC")
+        self.assertEqual(parsed.duration, Duration(((2, "hour"),)))
+
+    def test_attached_offset_with_unit_word_is_incomplete(self) -> None:
+        for text in ("UTC+2 hours", "08:00 UTC+2 hours", "08:00 GMT-3 days"):
+            with self.subTest(text=text), self.assertRaises(IntervalKeeperError) as ctx:
+                parse_interval(text)
+            self.assertIn("needs a number", ctx.exception.message)
+            self.assertIn("UTC + 2 hours", ctx.exception.message)
+
+    def test_bare_unit_word_is_incomplete(self) -> None:
+        with self.assertRaises(IntervalKeeperError) as ctx:
+            parse_interval("Mon hours")
+        self.assertIn("needs a number", ctx.exception.message)
+
+
 class CommaTests(unittest.TestCase):
     """D3: a comma continues a list only for the same kind as the item before it."""
 
@@ -234,7 +292,7 @@ class ErrorTests(unittest.TestCase):
         for text in (
             "", "   ", "*", "Mon *", "Mon,", ",Mon", "0", "32", "99", "10000", "Mon-Jun", "2028-2026", "100-99",
             "UTC", "Mon UTC Tue", "08:00,09:00-10:00", "24:00", "24:00-02:00", "25:00", "08:60", "08:00:60",
-            "*-04-31", "Apr,Jun 31", "2026-2028 2030", "2026-12-24 Dec", "2026-12-24-2026-12-25", "8h", "30min",
+            "*-04-31", "Apr,Jun 31", "2026-2028 2030", "2026-12-24 Dec", "2026-12-24-2026-12-25", "24h", "60m", "8h 9h", "Apr 1 8h -- 5",
             "CST 08:00", "Mon - ", "- Mon", "Mon--Fri",
         ):
             with self.subTest(text=text), self.assertRaises(IntervalKeeperError):

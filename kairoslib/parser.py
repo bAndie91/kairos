@@ -12,6 +12,8 @@ AST conventions (the contract for evaluate.py):
   local midnight (``24:00`` == 86400, only as a range end).
 * a point time has ``TimeSpec.end is None``; its length is one minute, or one
   second when ``TimeSpec.seconds`` is true.
+* ``hours`` (``8h`` == ``8:*``, 0..23) and ``minutes`` (``30m`` == ``*:30``, 0..59)
+  are inclusive ranges of whole hours / minutes-of-the-hour; ``lo > hi`` wraps.
 """
 from __future__ import annotations
 
@@ -49,6 +51,8 @@ class Clause:
     times: Tuple[TimeSpec, ...] = ()
     dates: Tuple[DateAtom, ...] = ()
     tz: Optional[str] = None
+    hours: Tuple[Range, ...] = ()
+    minutes: Tuple[Range, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -103,6 +107,7 @@ Expr = TUnion[Union, RelPlus, RelUntil]
 _KIND_FIELD = {
     "YEAR": "years", "MONTH": "months", "DOM": "doms",
     "WEEKDAY": "weekdays", "TIME": "times", "DATE": "dates",
+    "HOUR": "hours", "MINUTE": "minutes",
 }
 
 
@@ -163,8 +168,10 @@ class _Parser:
             return None
         if tok.kind == "ISODATE":
             return "DATE"
-        if tok.kind in ("TIME", "TSHORT"):
+        if tok.kind == "TIME":
             return "TIME"
+        if tok.kind == "TSHORT":
+            return "HOUR" if tok.text.endswith("h") else "MINUTE"
         if tok.kind == "NUMBER":
             return "YEAR" if int(tok.text) >= 100 else "DOM"
         wk = word_kind(tok)
@@ -192,6 +199,17 @@ class _Parser:
             return RelPlus(anchor, duration)
         self.expect_end()
         return anchor
+
+    @staticmethod
+    def unexpected(tok: Token, after_tz: Optional[str] = None) -> str:
+        if word_kind(tok) == "UNIT":
+            hint = f"; {tok.text!r} needs a number before it (a duration is 'NUMBER unit', written after '+' or before 'until')"
+            if after_tz is not None and ("+" in after_tz or "-" in after_tz):
+                hint += f"; note that {after_tz!r} is a zone offset, write 'UTC + 2 hours' (with spaces) for a duration"
+            return f"unexpected {tok.text!r}{hint}"
+        if after_tz is not None:
+            return f"unexpected {tok.text!r} after time zone {after_tz!r}; a time zone must end the clause"
+        return f"unexpected {tok.text!r}"
 
     def expect_end(self) -> None:
         if not self.at_end():
@@ -255,19 +273,17 @@ class _Parser:
             if tok.kind == "TZ":
                 tz = self.take().text
                 if not (self.at_end() or self.at("COMMA") or self.at("PLUS")):
-                    raise _fail(f"time zone {tz!r} must end the clause, found {self.peek().text!r} after it")  # type: ignore[union-attr]
+                    raise _fail(self.unexpected(self.peek(), after_tz=tz))  # type: ignore[arg-type]
                 break
             kind = self.kind_of(tok)
             if kind is None:
                 if tok.kind == "STAR":
                     raise _fail("'*' is only valid inside a date such as '*-12-25'")
-                if word_kind(tok) in ("UNIT", "UNTIL"):
-                    raise _fail(f"unexpected {tok.text!r}")
-                raise _fail(f"unexpected {tok.text!r}")
+                raise _fail(self.unexpected(tok))
             values = self.parse_item(kind)
             name = _KIND_FIELD[kind]
             if name in fields:
-                raise _fail(f"duplicate {kind} item in one clause (use a list such as 'Mon,Tue' instead of repeating)")
+                raise _fail(f"duplicate {kind} item in one clause (join values with ',' to make a list)")
             fields[name] = values
         if self.at("COMMA"):
             self.take()
@@ -324,13 +340,21 @@ class _Parser:
             return day
         if kind == "MONTH":
             return MONTHS[text.casefold()]
+        if kind == "HOUR":
+            hour = int(text[:-1])
+            if hour > 23:
+                raise _fail(f"hour {text!r} out of range (0h-23h)")
+            return hour
+        if kind == "MINUTE":
+            minute = int(text[:-3] if text.endswith("min") else text[:-1])
+            if minute > 59:
+                raise _fail(f"minute {text!r} out of range (0m-59m)")
+            return minute
         return WEEKDAYS[text.casefold()]
 
     @staticmethod
     def parse_time(tok: Token) -> Tuple[int, bool, bool]:
         """Return (seconds since midnight, has_seconds, is_24h)."""
-        if tok.kind == "TSHORT":
-            raise _fail(f"time form {tok.text!r} is not supported yet (see PLAN open questions); write HH:MM")
         parts = [int(p) for p in tok.text.split(":")]
         hours, minutes = parts[0], parts[1]
         seconds = parts[2] if len(parts) == 3 else 0
@@ -422,7 +446,9 @@ class _Parser:
                     raise _fail(f"day of month {toks[i].text!r} out of range (1-31)")
                 i += 1
         time: Optional[int] = None
-        if i < len(toks) and toks[i].kind in ("TIME", "TSHORT"):
+        if i < len(toks) and toks[i].kind == "TSHORT":
+            raise _fail(f"span times must be HH:MM[:SS], not {toks[i].text!r}")
+        if i < len(toks) and toks[i].kind == "TIME":
             secs, _has_secs, is24 = self.parse_time(toks[i])
             if is24:
                 raise _fail("'24:00' is only valid as the end of a time range")
