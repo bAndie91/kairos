@@ -285,7 +285,9 @@ After macro expansion the text is tokenised, whitespace being insignificant exce
 | `NUMBER` | digits |
 | `--` `-` `+` `,` `*` | punctuation (`--` is a span operator, `-` a range operator) |
 | `TZ` | IANA zone IDs, numeric UTC offsets, and explicit UTC/GMT/Z forms of §8.1 |
-| `WORD` | Unicode letters and locale-appropriate characters in month / weekday names, duration units, and `until` (case-insensitive where supported by the locale-aware date/time facilities) |
+| `WORD` | generic word after locale-aware month/weekday-name matching; Unicode letters and combining marks, plus characters required by recognized locale names |
+
+Locale-name recognition must be driven by the locale-aware date/time library, not by an English-oriented character regex. Before classifying an alphabetic token as a generic `WORD`, the lexer must recognize any complete locale-provided month or weekday name, including non-ASCII letters, combining marks, and punctuation that the library's name representation requires. Do not split or normalize a recognized name in a way that changes its spelling. Whitespace remains a separator between grammar items; a locale name containing internal whitespace is accepted only if the chosen date/time library represents and parses it as a single name in the grammar's context.
 
 Unknown word → error (`unknown word 'X' (undefined macro?)`).
 
@@ -296,7 +298,7 @@ Unknown word → error (`unknown word 'X' (undefined macro?)`).
 | `YEAR` | integer 100–9999 | `a ≤ b` required |
 | `MONTH` | a full or abbreviated month name recognized by the effective `LC_TIME` locale's date/time facilities | wraps across the calendar year (the locale's December-to-February equivalent selects December, January, February) |
 | `DOM` | integer 1–31 (leading zero ok) | wraps (`28-3` = 28…31, 1…3) |
-| `WEEKDAY` | a full or abbreviated weekday name recognized by the effective `LC_TIME` locale's date/time facilities | wraps (`Friday`-through-`Monday` in the active locale) |
+| `WEEKDAY` | a full or abbreviated weekday name recognized by the effective `LC_TIME` locale's date/time facilities | wraps from the locale's last weekday to its first weekday |
 | `TIME` | `H:MM[:SS]` (`24:00` only as a range end) | wraps past midnight (`23:00-04:00`) |
 | `HOUR` | `Nh`, N = 0–23 (`8h` = `8:*`) | inclusive set of whole hours; wraps (`22h-2h` = 22, 23, 0, 1, 2) |
 | `MINUTE` | `Nm` or `Nmin`, N = 0–59 (`30m` = `*:30`) | inclusive set of minutes of every hour; wraps (`50m-10m`) |
