@@ -19,6 +19,7 @@ import os
 import re
 import struct
 import sys
+import traceback
 from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Mapping, Optional, TextIO, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
@@ -102,8 +103,8 @@ def default_timezone(
         zone = get_localzone()
         if zone is not None:
             return zone
-    except Exception:  # tzlocal missing or unable to tell: fall through to the warning below
-        pass
+    except Exception:
+        traceback.print_exc()
 
     print("kairos: warning: could not determine system time zone; using UTC", file=error_stream)
     return timezone.utc

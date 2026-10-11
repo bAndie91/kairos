@@ -24,4 +24,4 @@ $(PREFIX)/bin/kairos: $(LIBDIR)/kairos | $(PREFIX)/bin
 
 uninstall:
 	[ ! -e $(PREFIX)/bin/kairos ] || rm $(PREFIX)/bin/kairos
-	rm -rf $(LIBDIR)/
+	[ ! -e $(LIBDIR) ] || rm -r $(LIBDIR)/
