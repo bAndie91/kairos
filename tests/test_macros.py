@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 from kairoslib.errors import IntervalKeeperError
 from kairoslib.macros import CommandNotRun, MacroScope, expand_macro_text, macro_env_name, validate_macro_name
@@ -164,6 +166,11 @@ class MacroTests(unittest.TestCase):
     def test_environment_variable_names_are_the_macro_names_as_is(self) -> None:
         self.assertEqual(macro_env_name("WORKDAY"), "KAIROS_MACRO_WORKDAY")
         self.assertEqual(macro_env_name("Mary's birthday"), "KAIROS_MACRO_Mary's birthday")
+        # dash (the /bin/sh of Debian and Ubuntu) does not pass environment variables whose names are
+        # not shell identifiers on to its children; bash does. Run the command with a shell that does.
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("no bash: the default shell may not forward non-identifier variable names")
         scope = MacroScope()
         scope.define("a b", "first")
         scope.define("a_b", "second")  # a different name, a different variable
@@ -175,7 +182,8 @@ class MacroTests(unittest.TestCase):
             "('KAIROS_MACRO_a b', 'KAIROS_MACRO_a_b', \\\"KAIROS_MACRO_Mary's birthday\\\")))\"",
             command=True,
         )
-        self.assertEqual(scope.resolve("E"), "first|second|Jun 1")
+        with mock.patch.dict(os.environ, {"SHELL": bash}):
+            self.assertEqual(scope.resolve("E"), "first|second|Jun 1")
 
 
     def test_a_variable_the_runtime_refuses_is_a_warning_not_an_error(self) -> None:
