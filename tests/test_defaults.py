@@ -95,11 +95,11 @@ class DefaultConfigExamplesTests(unittest.TestCase):
         code, stdout, stderr = self.run_examples("--at", "2026-04-03 10:00")
         self.assertEqual(code, 0, stderr)
         self.assertIn("Holy Friday\n", stdout)
-        self.assertNotIn("Easter Sunday", stdout)
+        self.assertNotIn("Χριστὸς ἀνέστη", stdout)
         code, stdout, stderr = self.run_examples("--at", "2026-04-05 10:00")
         self.assertEqual(code, 0, stderr)
-        self.assertIn("Easter Sunday\n", stdout)
-        self.assertIn("Easter weekend\n", stdout)
+        self.assertIn("Χριστὸς ἀνέστη!\n", stdout)
+        self.assertIn("Bright Week\n", stdout)
 
     def test_examples_follow_the_documented_semantics(self) -> None:
         # V5: ~ and @ (hidden "Sunday" is not reported, children see it as ~)
