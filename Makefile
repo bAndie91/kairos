@@ -8,7 +8,7 @@ test:
 
 
 LIBDIR = $(PREFIX)/lib/kairos
-LIBFILES = kairos $(shell git ls kairoslib/)
+LIBFILES = kairos $(wildcard kairoslib/*.py)
 LIBFILE_TARGETS = $(addprefix $(LIBDIR)/,$(LIBFILES))
 
 install: $(LIBFILE_TARGETS) $(PREFIX)/bin/kairos
@@ -20,6 +20,7 @@ $(LIBDIR)/kairoslib:
 	mkdir -p $@
 
 $(PREFIX)/bin/kairos: $(LIBDIR)/kairos
+	mkdir -p $(dir $@)
 	ln -snf ../lib/kairos/kairos $@
 
 uninstall:
