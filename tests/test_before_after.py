@@ -103,7 +103,11 @@ class V16(unittest.TestCase):
         self.assertEqual(end - start, 23 * 3600)  # the 29th has only 23 hours
 
     def test_instances_are_maximal_contiguous_ranges(self) -> None:
-        self.assertEqual(spans("1 day after Dec 24,25"), [("2026-12-25 00:00", "2026-12-27 00:00")])
+        # The comma ends the relative expression: the 25th of each month is
+        # included independently, and the shifted Dec 24 instance overlaps it.
+        expected = [(f"2026-{month:02d}-25 00:00", f"2026-{month:02d}-26 00:00") for month in range(1, 12)]
+        expected.append(("2026-12-25 00:00", "2026-12-26 00:00"))
+        self.assertEqual(spans("1 day after Dec 24,25"), expected)
 
     def test_anchor_far_from_the_window(self) -> None:
         # the anchor instance lies long after / before the evaluation window
