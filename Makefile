@@ -11,12 +11,18 @@ LIBDIR = $(PREFIX)/lib/kairos
 LIBFILES = kairos $(shell git ls kairoslib/)
 LIBFILE_TARGETS = $(addprefix $(LIBDIR)/,$(LIBFILES))
 
-install: $(LIBFILE_TARGETS) $(PREFIX)/bin/kairos
+install: $(LIBFILE_TARGETS) $(PREFIX)/bin/kairos $(PREFIX)/share/man/man1/kairos.1
 
 $(LIBFILE_TARGETS): $(LIBDIR)/%: % | $(LIBDIR)/kairoslib
 	cp -f --no-preserve=ownership $< $@
 
 $(LIBDIR)/kairoslib $(PREFIX)/bin:
+	mkdir -p $@
+
+$(PREFIX)/share/man/man1/kairos.1: man/kairos.1 | $(PREFIX)/share/man/man1
+	cp -f --no-preserve=ownership $< $@
+
+$(PREFIX)/share/man/man1 $(PREFIX)/bin:
 	mkdir -p $@
 
 $(PREFIX)/bin/kairos: $(LIBDIR)/kairos | $(PREFIX)/bin
@@ -25,3 +31,4 @@ $(PREFIX)/bin/kairos: $(LIBDIR)/kairos | $(PREFIX)/bin
 uninstall:
 	[ ! -e $(PREFIX)/bin/kairos ] || rm $(PREFIX)/bin/kairos
 	[ ! -e $(LIBDIR) ] || rm -r $(LIBDIR)/
+	[ ! -e $(PREFIX)/share/man/man1/kairos.1 ] || rm $(PREFIX)/share/man/man1/kairos.1
