@@ -35,7 +35,7 @@ Debian/Ubuntu:
 sudo apt install python3 python3-dateutil python3-tzlocal tzdata
 ```
 
-`kairos` runs straight from a checkout (`./kairos`). To install it:
+`kairos` runs straight from a checkout (`./kairos`). The complete command and configuration reference is in [`man/kairos.1`](man/kairos.1) and is installed as `kairos(1)`. To install it:
 
 ```sh
 sudo make install            # PREFIX=/usr/local by default
@@ -62,8 +62,7 @@ kairos [-c FILE] [--at DATETIME] [-n] [--tz ZONE] [--format FMT] [--check]
 
 The config is read from `$XDG_CONFIG_HOME/kairos/intervals.conf`
 (`~/.config/...`), then `$XDG_CONFIG_DIRS`. If none exists and `--config` was
-not given, a fully commented default is created there; it contains the
-complete format description and many examples. A missing `--config FILE` is an
+not given, a fully commented default is created there; it contains brief usage notes and examples. See `man kairos` for the complete format reference. A missing `--config FILE` is an
 error and is never created.
 
 On a config error, `kairos` prints `kairos: FILE:LINE: error: MESSAGE` for each
