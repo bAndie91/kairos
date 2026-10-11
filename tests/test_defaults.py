@@ -48,7 +48,9 @@ class DefaultConfigTextTests(unittest.TestCase):
         self.assertEqual((code, stdout, stderr), (0, "", ""))
 
     def test_text_covers_the_required_topics(self) -> None:
-        text = DEFAULT_CONFIG
+        # The full reference moved to the man page; keep examples in the
+        # generated config and verify both sources for their respective roles.
+        manpage = (Path(__file__).resolve().parents[1] / "man" / "kairos.1").read_text(encoding="utf-8")
         for needle in (
             "DURATION before ANCHOR",
             "DURATION after ANCHOR",
@@ -56,11 +58,11 @@ class DefaultConfigTextTests(unittest.TestCase):
             "Mary's birthday",  # macro names with spaces and punctuation
             "LC_TIME",  # locale-dependent month and weekday names
             "SECURITY",  # macro commands run with the user's privileges
-            'Easter := ! date -d "$(ncal -e)" +%F',
             "daemon or watch mode",  # out-of-scope points are documented (SPEC §1)
             "KAIROS_MACRO_<NAME>",
         ):
-            self.assertIn(needle, text)
+            self.assertIn(needle, manpage)
+        self.assertIn('Easter := ! date -d "$(ncal -e)" +%F', DEFAULT_CONFIG)
 
     def test_examples_extraction_is_strict_and_nonempty(self) -> None:
         lines = example_lines(DEFAULT_CONFIG)
@@ -89,7 +91,7 @@ class DefaultConfigExamplesTests(unittest.TestCase):
         self.assertEqual((code, stdout, stderr), (0, "", ""))
 
     def test_examples_work_through_the_fake_easter(self) -> None:
-        # The stub prints 04/05/26, so Easter is 2026-04-05 and Good Friday the 3rd.
+        # The stub prints 04/05/26, so Easter is 2026-04-05 and Holy Friday the 3rd.
         code, stdout, stderr = self.run_examples("--at", "2026-04-03 10:00")
         self.assertEqual(code, 0, stderr)
         self.assertIn("Good Friday\n", stdout)
