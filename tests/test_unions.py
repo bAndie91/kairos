@@ -58,9 +58,9 @@ class Parsing(unittest.TestCase):
         self.assertEqual(len(parsed.parts[0].anchor.terms), 1)
         parsed = parse_interval("Apr 10, Apr 20 + 2 days")
         self.assertEqual([type(p) for p in parsed.parts], [Union, RelPlus])
-        # a list inside one clause is still one anchor
+        # A comma ends the relative expression even without following whitespace.
         parsed = parse_interval("2 days before Apr 10,20")
-        self.assertIsInstance(parsed, RelShift)
+        self.assertEqual([type(p) for p in parsed.parts], [RelShift, Union])
 
     def test_a_plus_form_ends_at_its_duration(self) -> None:
         parsed = parse_interval("Mon + 2 days, Fri")
@@ -116,8 +116,13 @@ class Semantics(unittest.TestCase):
             [("2026-04-10 00:00", "2026-04-11 00:00"), ("2026-04-20 00:00", "2026-04-22 00:00")],
         )
 
-    def test_a_list_inside_one_clause_is_one_anchor(self) -> None:
-        self.assertEqual(spans("2 days before Apr 10,20"), [("2026-04-08 00:00", "2026-04-09 00:00"), ("2026-04-18 00:00", "2026-04-19 00:00")])
+    def test_a_comma_without_whitespace_ends_the_relative_expression(self) -> None:
+        expected = [("2026-04-08 00:00", "2026-04-09 00:00")]
+        expected.extend(
+            (f"2026-{month:02d}-20 00:00", f"2026-{month:02d}-21 00:00")
+            for month in range(1, 13)
+        )
+        self.assertEqual(spans("2 days before Apr 10,20"), sorted(expected))
         self.assertEqual(spans("1 day before Apr 10-12"), [("2026-04-09 00:00", "2026-04-12 00:00")])
 
     def test_parts_use_their_own_zone(self) -> None:
