@@ -1,3 +1,5 @@
+# -*- coding: utf8 -*-
+
 """Default configuration text (SPEC §3.3).
 
 The text is entirely comments, so a freshly created config is inert. Two
@@ -224,11 +226,12 @@ DEFAULT_CONFIG = r"""## ========================================================
 ##
 ## Errors are printed to stderr as `kairos: FILE:LINE: error: MESSAGE`, all of
 ## them in one run where possible, with exit status 2 and an empty stdout.
-## A config that does not exist is created only when no --config is given.
+## The default config, when called without --config, is created if does not exist.
 ##
-## Not provided: daemon or watch mode, notifications, running actions when a
+## Non-features: daemon or watch mode, notifications, running actions when a
 ## state changes, config includes, calendars other than Gregorian, sub-second
-## precision, sandboxing of macro commands.
+## precision, sandboxing command executions. (Combine with other tools to
+## achieve them)
 ##
 ## -------------------------------------------------------------------------
 ## Examples
@@ -291,9 +294,9 @@ DEFAULT_CONFIG = r"""## ========================================================
 ## `date` turns it into an ISO date (YYYY-MM-DD). The value is only this
 ## year's Easter (a snapshot, see section 3).
 # Easter := ! date -d "$(ncal -e)" +%F
-# Easter = Easter Sunday
-# 2 days before Easter = Good Friday
-# Easter + 1 day = Easter weekend
+# Easter = Χριστὸς ἀνέστη!
+# 2 days before Easter = Holy Friday
+# Easter + 1 week = Bright Week
 ## KAIROS_NOW holds the evaluation instant; `date` reduces it to a day.
 # Today := ! date -d "$KAIROS_NOW" +%F
 # Today = today
