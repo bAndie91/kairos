@@ -183,9 +183,19 @@ class CommaTests(unittest.TestCase):
         union = parse_interval("Mon 08:00 CET, Tue 09:00")
         self.assertEqual([t.tz for t in union.terms], ["CET", None])
 
+    def test_whitespace_around_commas_is_insignificant(self) -> None:
+        self.assertEqual(parse_interval("Jun 1,Jul 2"), parse_interval("Jun 1, Jul 2"))
+
+    def test_commas_end_relative_anchor_even_without_whitespace(self) -> None:
+        self.assertEqual(
+            parse_interval("2 days before Apr 10,20"),
+            parse_interval("2 days before Apr 10, 20"),
+        )
+
 
 class SpanTests(unittest.TestCase):
     def test_span_forms(self) -> None:
+        self.assertEqual(parse_interval("1 -- 5"), parse_interval("1-5"))
         self.assertEqual(
             parse_interval("Apr 1 -- Jun 15"),
             Union((Span(DateSide(None, 4, 1), DateSide(None, 6, 15)),)),
