@@ -141,17 +141,12 @@ The first file that exists wins; files are not merged. XDG variables holding rel
 
 If no file was found and `--config` was **not** given, the tool creates
 `$XDG_CONFIG_HOME/kairos/intervals.conf` (directory mode 0700 if it has to be created, file mode 0644)
-with the default content (§3.3), prints `kairos: created default config: PATH` to stderr, and proceeds
+with the default examples (§3.3), prints `kairos: created default config: PATH` to stderr, and proceeds
 using it. If `--config` names a file that does not exist: error, nothing created (D12).
 
 ### 3.3 Default config content
 
-The default config has **no active lines**: everything is inside a comment block.
-It must contain, in comments:
-
-1. The complete format specification (condensed from §4–§9): line format, indentation, macros,
-   INTERVAL syntax with all field kinds, negation, STATE rules (`~`, `@`), relative intervals, time zones.
-2. An examples section. Inside it, every example config line is written as `#` followed by the
+The default config has **no active lines**: example lines are commented out. The complete user-facing command and syntax reference lives in `man/kairos.1`; do not duplicate it in the default config. Keep only brief usage instructions before the examples section. Inside it, every example config line is written as `#` followed by the
    original line (indentation preserved after the `#`). **Test requirement:** stripping the leading `#`
    from those lines must yield a config that parses successfully.
    Explanatory prose inside the block goes in lines starting with `## `, which the test ignores.
@@ -349,14 +344,14 @@ otherwise the comma ends the current *term*, and the next item starts a new clau
 
 A list may not mix point times and time ranges. The union of all terms is the interval.
 
-A comma followed by a duration (`NUMBER unit`, e.g. `2 days`) never continues a list: `2` there is the count of a duration, not a day of month. It starts a new *part* of the INTERVAL, a relative expression (§6.6, §9.2): `Apr 1, 2 days before X` is the two parts `Apr 1` and `2 days before X`, never the day list `1,2`.
+A comma followed by a duration (`NUMBER unit`, e.g. `2 days`) never continues a list: `2` there is the count of a duration, not a day of month. It starts a new *part* of the INTERVAL, a relative expression (§6.6, §9.2): `Apr 1, 2 days before X` is the two parts `Apr 1` and `2 days before X`, never the day list `1,2`. Whitespace before or after a comma is insignificant: `10,20` equals `10, 20`, and `Jun 1,Jul 2` equals `Jun 1, Jul 2`.
 
 ### 6.5 Spans (`--`)
 
 `A -- B` is a *span* between two dates.
 
 * Side forms: `ISODATE`, or `[YEAR] [MONTH] DOM`, each optionally followed by one `TIME`. No lists, ranges or weekdays. A `TZ` may end the whole span and applies to both sides.
-* Left side needs a concrete month and day; the year is optional (absent or `*` → recurring every year).
+* Left side may be a lone DOM (`1 -- 5` means days 1 through 5 of every month, equivalent to `1-5`), or a concrete month and day; the year is optional (absent or `*` → recurring every year).
 * Right side may omit year and month: they are inherited from the left side (`2026 Apr 1 -- 20`, `Apr 1 -- Jun 15`, `2026 Apr 1 -- May 15`).
 * If the right date is then before the left date: a right side with no month moves to the next month; a right side with no explicit year moves to the next year (so `Dec 20 -- Jan 10` and `2026 Dec 20 -- Jan 10` work).
 * Without times: whole days, **end date inclusive** → `[00:00 of first day, 00:00 after last day)`.
@@ -662,7 +657,7 @@ Mon + 2 days, Fri = week
 2 days before Apr 10, Apr 20 = separate parts
 Apr 1, 2 days = oops
 ```
-`two shifts` is exactly Apr 8 and Oct 4 (active 2026-04-08 00:00:00, inactive 2026-04-09 00:00:00 and 2026-04-10 12:00); `day and shift` is exactly Apr 1 and Apr 8 (never the days 1 and 2); `week` is every Monday and Tuesday (`[Mon 00:00, Wed 00:00)`) plus every Friday; `separate parts` is exactly Apr 8 and Apr 20 (the shift applies to `Apr 10` only); `2 days before Apr 10,20` is Apr 8 and Apr 18 (a list inside one clause); the last line is an error (`2 days` without `until`, `before` or `after`). A trailing comma (`Apr 1,`, `Apr 1, 2 days before Apr 10,`) is an error. With a union INTERVAL `--next-change` still finds the first change of any part (`two shifts` at 2026-01-01 00:00 is `2026-04-08 00:00:00`).
+`two shifts` is exactly Apr 8 and Oct 4 (active 2026-04-08 00:00:00, inactive 2026-04-09 00:00:00 and 2026-04-10 12:00); `day and shift` is exactly Apr 1 and Apr 8 (never the days 1 and 2); `week` is every Monday and Tuesday (`[Mon 00:00, Wed 00:00)`) plus every Friday; `separate parts` is exactly Apr 8 and Apr 20 (the shift applies to `Apr 10` only); `2 days before Apr 10, 20` is Apr 8 and Apr 20 (a list inside one clause); the last line is an error (`2 days` without `until`, `before` or `after`). A trailing comma (`Apr 1,`, `Apr 1, 2 days before Apr 10,`) is an error. With a union INTERVAL `--next-change` still finds the first change of any part (`two shifts` at 2026-01-01 00:00 is `2026-04-08 00:00:00`).
 
 **V15** locale-sensitive month and weekday names (run in subprocesses with environment variables set before Python starts; skip if the requested locale is not installed):
 
