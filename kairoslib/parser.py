@@ -164,6 +164,7 @@ class _Parser:
         self.toks = tokens
         self.source = source
         self.i = 0
+        self._relative_anchor = False
 
     # -- token helpers -------------------------------------------------
     def source_text(self, begin: int, end: int) -> str:
@@ -248,7 +249,12 @@ class _Parser:
             self.take()
             if self.at_end() or self.at("COMMA"):
                 raise _fail(f"{tok.text!r} needs an anchor interval")
-            anchor = Union((self.parse_term(),))
+            self._relative_anchor = True
+            try:
+                anchor_term = self.parse_term()
+            finally:
+                self._relative_anchor = False
+            anchor = Union((anchor_term,))
             if keyword == "UNTIL":
                 return RelUntil(duration, anchor)
             return RelShift(duration, anchor, -1 if keyword == "BEFORE" else 1)
@@ -305,7 +311,25 @@ class _Parser:
             raise _fail("INTERVAL must not be empty")
         end = self.term_end()
         if any(t.kind == "DASHDASH" for t in self.toks[self.i:end]):
-            term: Term = self.parse_span(self.toks[self.i:end])
+            span_toks = self.toks[self.i:end]
+            marks = [k for k, t in enumerate(span_toks) if t.kind == "DASHDASH"]
+            if len(marks) == 1:
+                left, right = span_toks[:marks[0]], span_toks[marks[0] + 1:]
+                # A bare DOM span is simply a recurring day-of-month range.
+                if (len(left) == len(right) == 1
+                        and left[0].kind == right[0].kind == "NUMBER"
+                        and int(left[0].text) < 100 and int(right[0].text) < 100):
+                    a = int(left[0].text)
+                    b = int(right[0].text)
+                    if not 1 <= a <= 31:
+                        raise _fail(f"day of month {left[0].text!r} out of range (1-31)")
+                    if not 1 <= b <= 31:
+                        raise _fail(f"day of month {right[0].text!r} out of range (1-31)")
+                    term = Clause(doms=(self.make_range("DOM", a, b, f"{left[0].text} -- {right[0].text}"),))
+                else:
+                    term = self.parse_span(span_toks)
+            else:
+                term = self.parse_span(span_toks)
             self.i = end
             return term
         return self.parse_clause()
@@ -347,7 +371,7 @@ class _Parser:
         values = []
         while True:
             values.append(self.parse_value(kind))
-            if self.at("COMMA") and self.kind_of(self.peek(1)) == kind and not self.duration_at(1):
+            if not self._relative_anchor and self.at("COMMA") and self.kind_of(self.peek(1)) == kind and not self.duration_at(1):
                 self.take()
                 continue
             break
