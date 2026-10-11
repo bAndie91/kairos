@@ -1,0 +1,494 @@
+.TH KAIROS 1 "October 2026" "kairos" "User Commands"
+.SH NAME
+kairos \- time-based arbitrary state registry
+.SH SYNOPSIS
+.B kairos
+.RI [ options ]
+.SH DESCRIPTION
+kairos reads time intervals from a configuration file and prints the state names active now. With
+.B --next-change
+it prints the next instant at which the reported state set changes.
+.SH CONFIGURATION REFERENCE
+.PP
+kairos is a time-based state registry. This file maps time INTERVALs to
+.PP
+free-text STATE names. Run `kairos` and it prints the states that are
+.PP
+active right now, one per line; `kairos --next-change` prints when that
+.PP
+set of states will next change.
+.PP
+Every line of this file is a comment, so nothing is active yet. To enable
+.PP
+an example, copy it below the examples section and remove the leading "# ".
+.PP
+Check your edits with `kairos --check`; try a rule at another moment with
+.PP
+`kairos --at "2026-10-09 10:00"`. `kairos --print-default-config` prints
+.PP
+this text again.
+.PP
+Conventions in this file: lines starting with "## " are explanations; every
+.PP
+other line starting with "#" is an example, written as "# " followed by the
+.PP
+original config line.
+.PP
+-------------------------------------------------------------------------
+.SH LINE FORMAT
+.PP
+-------------------------------------------------------------------------
+.PP
+.nf
+  blank line             ignored
+.fi
+.PP
+.nf
+  # comment              ignored; there are NO inline comments, because a
+.fi
+.PP
+.nf
+                         STATE is free text and may contain "#"
+.fi
+.PP
+.nf
+  NAME := VALUE          macro definition (section 3)
+.fi
+.PP
+.nf
+  [!] INTERVAL [= STATE] interval line
+.fi
+.PP
+The file is UTF-8 text. Indentation uses spaces or tabs (never both in one
+.PP
+line) and works like Python: a line indented deeper than the previous line
+.PP
+is its child; dedenting must return to an indentation level that is open.
+.PP
+The first line must not be indented. Macro lines cannot have children.
+.PP
+An interval line is split at the FIRST "=". A leading "!" negates the
+.PP
+INTERVAL (section 6). Without "= STATE" the line is not reported, but its
+.PP
+INTERVAL still restricts its children. An empty INTERVAL or an empty STATE
+.PP
+is an error.
+.PP
+STATE is free text; leading and trailing blanks are trimmed. Macros are NOT
+.PP
+expanded in it. Escapes: \e~ is a literal ~, \e@ a literal @, \e\e a backslash;
+.PP
+any other backslash sequence is an error.
+.PP
+.nf
+  ~    is replaced by the name of the nearest ancestor line that has a
+.fi
+.PP
+.nf
+       STATE (an error if there is none).
+.fi
+.PP
+.nf
+  @    a STATE starting with "@" is hidden: it is not reported, but the
+.fi
+.PP
+.nf
+       text after the "@" is the name that children see as "~".
+.fi
+.PP
+-------------------------------------------------------------------------
+.SH INTERVAL SYNTAX
+.PP
+-------------------------------------------------------------------------
+.PP
+An INTERVAL is built from items. Items of one line are all required at
+.PP
+once ("and"): `Apr-Jun 1-15` is April to June AND day 1 to 15.
+.PP
+.nf
+  kind      atoms                                 range a-b
+.fi
+.PP
+.nf
+  YEAR      100-9999 (2026)                       a <= b
+.fi
+.PP
+.nf
+  MONTH     month name, full or short (Oct)       wraps (Dec-Feb)
+.fi
+.PP
+.nf
+  DOM       day of month 1-31                     wraps (28-3)
+.fi
+.PP
+.nf
+  WEEKDAY   weekday name, full or short (Mon)     wraps (Sat-Mon)
+.fi
+.PP
+.nf
+  TIME      H:MM or H:MM:SS ("24:00" only as a    wraps past midnight
+.fi
+.PP
+.nf
+            range end)                            (23:00-04:00)
+.fi
+.PP
+.nf
+  HOUR      8h  = the whole hour 08:00-09:00      inclusive, wraps (22h-2h)
+.fi
+.PP
+.nf
+  MINUTE    30m or 30min = minute :30 of every    inclusive, wraps (50m-10m)
+.fi
+.PP
+.nf
+            hour
+.fi
+.PP
+.nf
+  DATE      Y-m-D, each of Y, m, D may be "*"     (use "--", see below)
+.fi
+.PP
+.nf
+            (2026-10-09, *-12-25, *-*-01)
+.fi
+.PP
+* A number below 100 is a day of month, 100 or more is a year.
+.PP
+* Month and weekday names are case-insensitive and follow the LC_TIME
+.PP
+.nf
+  locale of the environment (LC_ALL, then LC_TIME, then LANG): in a
+.fi
+.PP
+.nf
+  Hungarian locale write "március", in an English one "March". Nothing
+.fi
+.PP
+.nf
+  else is accepted as a name. A name that is unknown here but valid in
+.fi
+.PP
+.nf
+  another installed locale is reported with a "wrong locale?" hint.
+.fi
+.PP
+.nf
+  Numbers, ISO dates and times do not depend on the locale.
+.fi
+.PP
+* At most one group of each kind per line; DATE cannot be combined with
+.PP
+.nf
+  YEAR, MONTH or DOM; dates that can never exist (Feb 30, 2026-02-29) are
+.fi
+.PP
+.nf
+  errors, but "Feb 29" is fine.
+.fi
+.PP
+* No day-level item (YEAR, MONTH, DOM, WEEKDAY, DATE) means every day; no
+.PP
+.nf
+  TIME item means the whole day.
+.fi
+.PP
+* Time ranges are half-open: `08:00-16:00` is active at 08:00:00 and not
+.PP
+.nf
+  at 16:00:00. A point time lasts one minute (`08:00` is `08:00-08:01`), or
+.fi
+.PP
+.nf
+  one second when written with seconds (`08:00:30`). Day selectors pick the
+.fi
+.PP
+.nf
+  STARTING day of a range that runs past midnight: `Fri 22:00-02:00` ends
+.fi
+.PP
+.nf
+  on Saturday 02:00.
+.fi
+.PP
+* DST gaps and folds follow Python's zoneinfo (PEP 495): a time that does
+.PP
+.nf
+  not exist uses the offset before the change, an ambiguous one its first
+.fi
+.PP
+.nf
+  occurrence; ranges that become empty vanish.
+.fi
+.PP
+Commas. `a,b` builds a list of one kind (`Wed,Fri`, `Jun,Jul,Aug`, `1,15`,
+.PP
+`Mon-Wed,Fri`, `08:00-12:00,13:00-17:00`). A comma continues the list only
+.PP
+if the next item has the same kind as the item before the comma;
+.PP
+otherwise it separates TERMs, and the INTERVAL is the union of its terms:
+.PP
+.nf
+  `Apr,Jun 1,15`        (Apr or Jun) and (1 or 15): four days
+.fi
+.PP
+.nf
+  `Apr 1, Jun 15`       two terms: Apr 1 and Jun 15
+.fi
+.PP
+.nf
+  `Mon 08:00-09:00, Tue 10:00-11:00`   two terms
+.fi
+.PP
+A comma before `NUMBER unit` (`, 2 days before ...`) never continues a
+.PP
+list; it starts a new part (section 5). A list cannot mix point times and
+.PP
+time ranges.
+.PP
+Spans. `A -- B` is the span between two dates. A side is an ISO date or
+.PP
+`[YEAR] [MONTH] DOM`, optionally followed by one TIME. The left side needs
+.PP
+a month and a day; without a year it recurs every year. The right side may
+.PP
+omit year and month (they are inherited, and move forward when the result
+.PP
+would end before the start: `Dec 20 -- Jan 10`). Without times the end day
+.PP
+is included (`Apr 1 -- Jun 15` ends at the end of Jun 15); with times both
+.PP
+sides need one and the end is exclusive. `2026 Apr 1 -- 20`,
+.PP
+`2026 Apr 1-20` and `2026-04-01 -- 20` are the same. In a year where an
+.PP
+endpoint does not exist (Feb 29) it moves to the end of Feb 28.
+.PP
+Time zones. A clause or span may end with a zone that applies to its days,
+.PP
+times and arithmetic: an IANA zone ID (`Europe/Budapest`, `Etc/UTC`, any
+.PP
+case), `UTC`, `GMT` or `Z`, or an offset `UTC+2`, `UTC-0330`, `GMT+01:00`
+.PP
+(ISO sign: `UTC+0300` is three hours EAST of Greenwich). Bare
+.PP
+abbreviations such as CEST or CST are rejected: they are not unique, so
+.PP
+use a zone ID or an offset. Without a zone the default zone is used:
+.PP
+`--tz`, else $TZ, else the system zone (UTC with a warning if unknown).
+.PP
+List zone IDs with:
+.PP
+.nf
+  python3 -c 'from zoneinfo import available_timezones as a; print(*sorted(a()), sep="\en")'
+.fi
+.PP
+Zone data comes from the IANA time zone database (system tzdata).
+.PP
+-------------------------------------------------------------------------
+.SH MACROS
+.PP
+-------------------------------------------------------------------------
+.PP
+.nf
+  NAME := STRING         literal text
+.fi
+.PP
+.nf
+  NAME := ! COMMAND      the standard output of a shell command
+.fi
+.PP
+NAME is everything before the first ":=" (trimmed). It may contain spaces
+.PP
+and punctuation (`Mary's birthday`), may start with, end with or contain
+.PP
+another macro's name, and is case-sensitive. It must not be empty, contain
+.PP
+"=", start with "!" or lack a letter, and must not be entirely a month or
+.PP
+weekday name of the locale, a duration unit, until, before, after, UTC,
+.PP
+GMT or Z ("Mon morning" is fine, "Mon" is not).
+.PP
+Before an INTERVAL (or a STRING value) is read, every visible macro name
+.PP
+that stands as a whole word is replaced by its value, once (the result is
+.PP
+not rescanned). The longest matching name wins. `mary` does not match
+.PP
+inside `annamary`. Macros are not expanded in STATE or in COMMAND text.
+.PP
+A macro defined at indentation 0 is visible to all following lines; one
+.PP
+defined as a child of a line is visible in that line's subtree only. A name
+.PP
+that is already visible cannot be defined again; sibling subtrees may reuse
+.PP
+names.
+.PP
+COMMAND is run with ${SHELL:-/bin/sh} -c, stdin from /dev/null. Newlines in
+.PP
+its output become spaces and the trailing newline is dropped. It sees the
+.PP
+caller's environment plus
+.PP
+.nf
+  KAIROS_MACRO_<NAME>        value of each visible macro, NAME as written
+.fi
+.PP
+.nf
+  KAIROS_NOW                 the evaluation instant, ISO 8601 with offset
+.fi
+.PP
+.nf
+  KAIROS_INTERVAL_<LEVEL>    INTERVAL text of the line and each ancestor
+.fi
+.PP
+.nf
+  KAIROS_STATE_<LEVEL>       their STATE (LEVEL counts from 0)
+.fi
+.PP
+A command runs lazily: when a line first uses its macro, and never if the
+.PP
+macro is unused or only used below a line that is not active at the
+.PP
+evaluation time (default mode); `--check` and `--next-change` never skip.
+.PP
+A failing command (non-zero exit) is an error reported at the macro's line
+.PP
+when it is evaluated. The output is a snapshot taken at that moment: a
+.PP
+command that yields only this year's date cannot predict next year's.
+.PP
+SECURITY: macro commands are arbitrary code run with YOUR privileges and
+.PP
+are not sandboxed. Only put commands in this file that you trust, and keep
+.PP
+the file writable by you only.
+.PP
+-------------------------------------------------------------------------
+.SH HIERARCHY, NEGATION AND REPORTED STATES
+.PP
+-------------------------------------------------------------------------
+.PP
+A child restricts its parent: with `Mon-Fri` and a child `Dec`, the child
+.PP
+means "weekdays in December". Siblings are independent. `*-*-01` with a
+.PP
+child `Fri` selects days that are both a 1st and a Friday; the first
+.PP
+Friday of a month is `1-7 Fri`.
+.PP
+A child `! INTERVAL` subtracts from its parent; at top level it is the
+.PP
+complement. The effective set of a line is its parent's set intersected
+.PP
+with its INTERVAL (or minus it, when negated).
+.PP
+A line is reported when it has a STATE that does not start with "@" and is
+.PP
+not empty after "~" substitution. Several lines with the same name form
+.PP
+one state, active when any of them is. States are printed in the order of
+.PP
+the first line that names them. A state ending exactly when another line
+.PP
+of the same name starts is not a change for `--next-change`.
+.PP
+-------------------------------------------------------------------------
+.SH RELATIVE INTERVALS
+.PP
+-------------------------------------------------------------------------
+.PP
+DURATION is one or more `NUMBER unit` pairs (`5 days`, `4 days 9 hours`);
+.PP
+units: second, minute, hour, day, week, month, year (singular or plural).
+.PP
+An ANCHOR is one term (a clause with its lists, or a span). Its instances
+.PP
+are the maximal contiguous ranges of its set. Day, week, month and year
+.PP
+arithmetic is calendar arithmetic in the anchor's zone; hours, minutes and
+.PP
+seconds are elapsed time; calendar units are applied first.
+.PP
+.nf
+  ANCHOR + DURATION       from the START of each instance, DURATION long
+.fi
+.PP
+.nf
+                          (`1-7 Mon + 5 day`: Monday to Saturday)
+.fi
+.PP
+.nf
+  DURATION until ANCHOR   DURATION long, up to and including the whole
+.fi
+.PP
+.nf
+                          instance (`40 days until Dec 24`)
+.fi
+.PP
+.nf
+  DURATION before ANCHOR  every instance moved back as a whole, its length
+.fi
+.PP
+.nf
+                          kept (`3 days before Dec 24` is Dec 21)
+.fi
+.PP
+.nf
+  DURATION after ANCHOR   every instance moved forward as a whole
+.fi
+.PP
+An INTERVAL may have several parts separated by commas: plain terms and
+.PP
+relative expressions in any order; the result is their union. A relative
+.PP
+operator never reaches beyond its own term, so a comma ends it:
+.PP
+.nf
+  `2 days before Apr 10, Apr 20`   Apr 8 and Apr 20
+.fi
+.PP
+.nf
+  `2 days before Apr 10,20`        Apr 8 and Apr 18 (a list in one clause)
+.fi
+.PP
+.nf
+  `Apr 1, 2 days before Apr 10`    Apr 1 and Apr 8
+.fi
+.PP
+The result of a relative expression is an ordinary set: it can be negated,
+.PP
+narrowed by children, or carry a STATE.
+.PP
+-------------------------------------------------------------------------
+.SH ERRORS AND LIMITS
+.PP
+-------------------------------------------------------------------------
+.PP
+Errors are printed to stderr as `kairos: FILE:LINE: error: MESSAGE`, all of
+.PP
+them in one run where possible, with exit status 2 and an empty stdout.
+.PP
+The default config, when called without --config, is created if does not exist.
+.PP
+Non-features: daemon or watch mode, notifications, running actions when a
+.PP
+state changes, config includes, calendars other than Gregorian, sub-second
+.PP
+precision, sandboxing command executions. (Combine with other tools to
+.PP
+achieve them)
+.SH OPTIONS
+See the command-line summary in README.md and run
+.B kairos --help
+for the supported options.
+.SH EXAMPLES
+The default configuration contains commented examples at
+.I $XDG_CONFIG_HOME/kairos/intervals.conf
+.SH SEE ALSO
+date(1)
