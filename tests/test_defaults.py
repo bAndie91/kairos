@@ -94,7 +94,7 @@ class DefaultConfigExamplesTests(unittest.TestCase):
         # The stub prints 04/05/26, so Easter is 2026-04-05 and Holy Friday the 3rd.
         code, stdout, stderr = self.run_examples("--at", "2026-04-03 10:00")
         self.assertEqual(code, 0, stderr)
-        self.assertIn("Good Friday\n", stdout)
+        self.assertIn("Holy Friday\n", stdout)
         self.assertNotIn("Easter Sunday", stdout)
         code, stdout, stderr = self.run_examples("--at", "2026-04-05 10:00")
         self.assertEqual(code, 0, stderr)
