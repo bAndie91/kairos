@@ -244,15 +244,13 @@ otherwise it separates TERMs, and the INTERVAL is the union of its terms:
 .PP
 A comma before `NUMBER unit` (`, 2 days before ...`) never continues a
 .PP
-list; it starts a new part (section 5). A list cannot mix point times and
+list; it starts a new part (section 5). Whitespace around commas is insignificant: `10,20` equals `10, 20`, and `Jun 1,Jul 2` equals `Jun 1, Jul 2`. A list cannot mix point times and
 .PP
 time ranges.
 .PP
 Spans. `A -- B` is the span between two dates. A side is an ISO date or
 .PP
-`[YEAR] [MONTH] DOM`, optionally followed by one TIME. The left side needs
-.PP
-a month and a day; without a year it recurs every year. The right side may
+`[YEAR] [MONTH] DOM`, optionally followed by one TIME. The left side may be a lone day-of-month (`1 -- 5` means days 1 through 5 of every month, equivalent to `1-5`), or a month and day; without a year it recurs every year. The right side may
 .PP
 omit year and month (they are inherited, and move forward when the result
 .PP
