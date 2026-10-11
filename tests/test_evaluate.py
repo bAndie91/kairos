@@ -75,6 +75,9 @@ class V1V2V3(unittest.TestCase):
         self.assertFalse(active("*-*-01", "2026-10-02T12:00:00"))
         self.assertTrue(active("Apr-Jun 1-15", "2026-05-10T00:00:00"))
         self.assertFalse(active("Apr-Jun 1-15", "2026-05-16T00:00:00"))
+        self.assertTrue(active("1 -- 5", "2026-11-01T10:00:00"))
+        self.assertTrue(active("1 -- 5", "2026-11-05T10:00:00"))
+        self.assertFalse(active("1 -- 5", "2026-11-06T10:00:00"))
         self.assertTrue(active("28-3", "2026-11-02T10:00:00"))
         self.assertTrue(active("28-3", "2026-11-29T10:00:00"))
         self.assertFalse(active("28-3", "2026-11-15T10:00:00"))
@@ -90,6 +93,13 @@ class V1V2V3(unittest.TestCase):
         self.assertTrue(active(text, "2026-10-12T08:30:00"))
         self.assertTrue(active(text, "2026-10-13T10:30:00"))
         self.assertFalse(active(text, "2026-10-12T10:30:00"))
+
+    def test_relative_comma_without_whitespace_starts_new_part(self) -> None:
+        text = "2 days before Apr 10,20"
+        self.assertTrue(active(text, "2026-04-08T12:00:00"))
+        self.assertFalse(active(text, "2026-04-18T12:00:00"))
+        self.assertTrue(active(text, "2026-04-20T12:00:00"))
+
 
 
 class BareTimeAndHourMinute(unittest.TestCase):
