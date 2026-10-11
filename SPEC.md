@@ -146,11 +146,9 @@ using it. If `--config` names a file that does not exist: error, nothing created
 
 ### 3.3 Default config content
 
-The default config has **no active lines**: example lines are commented out. The complete user-facing command and syntax reference lives in `man/kairos.1`; do not duplicate it in the default config. Keep only brief usage instructions before the examples section. Inside it, every example config line is written as `#` followed by the
-   original line (indentation preserved after the `#`). **Test requirement:** stripping the leading `#`
-   from those lines must yield a config that parses successfully.
-   Explanatory prose inside the block goes in lines starting with `## `, which the test ignores.
-3. The examples from the brief (all of them, with `Easter` using the working wrapper from D5).
+The default config has **no active lines**. It begins with brief usage instructions, then an examples section. The complete command-line and configuration reference lives in `man/kairos.1`; do not duplicate it in the default config.
+
+Every example config line is written as `# ` followed by the original line (indentation preserved after that single space). **Test requirement:** stripping the leading `# ` from example lines must yield a config that parses successfully. Explanatory prose inside the block goes in lines starting with `## `, which the test ignores. Include all examples from the brief, with `Easter` using the working wrapper from D5.
 
 ---
 
