@@ -1,6 +1,6 @@
 # kairos — execution plan
 
-Status: **DRAFT 0.1 — all milestones M0–M14 done; only the author's manual review run (M9 acceptance) and the Python 3.9 check remain.** Companion to `SPEC.md`, which is the source of truth for behaviour.
+Status: **DRAFT 0.1 — all milestones M0–M14 done; only the author's manual review run (M9 acceptance) and the Python 3.9 check remain.** Companion to `SPEC.md`, which is the source of truth for behaviour. The `kairos(1)` man page is the full user-facing syntax reference; the generated default config contains examples rather than a second copy of the reference.
 This plan is written so that an agent with no other context can pick it up and continue.
 
 ## 0. How to use this plan (read first)
@@ -360,3 +360,12 @@ Completed (`kairoslib/defaults.py`, `README.md`, `tests/test_defaults.py`, small
 - [x] SPEC V14's last paragraph said `08:00 + 2 hours` "begins at 10:00:00": author confirmed the result is `[08:00, 10:00)`; the sentence is fixed.
 - [x] Locale-aware month/weekday names are now planned as M10.
 - [x] SPEC §5.3 macro names (spaces, punctuation, longest name first) are not implemented by M3; names are identifier-like (now with Unicode letters). Decide whether this is a new milestone. Done as M12.
+
+
+## 15. Documentation follow-up
+
+- [ ] Keep `SPEC.md` authoritative for lone-day spans, insignificant whitespace around commas, and relative-expression comma boundaries.
+- [ ] Maintain `man/kairos.1` as the complete user-facing syntax and CLI reference, moved from the documentation formerly embedded in `kairoslib/defaults.py`.
+- [ ] Keep the default config focused on brief usage instructions and commented examples; validate uncommented examples.
+- [ ] Install and uninstall the man page through Makefile targets, respecting `PREFIX`.
+- [ ] Add/update conformance tests for lone-day spans and whitespace-insensitive comma parsing.
