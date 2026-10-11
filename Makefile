@@ -16,14 +16,11 @@ install: $(LIBFILE_TARGETS) $(PREFIX)/bin/kairos $(PREFIX)/share/man/man1/kairos
 $(LIBFILE_TARGETS): $(LIBDIR)/%: % | $(LIBDIR)/kairoslib
 	cp -f --no-preserve=ownership $< $@
 
-$(LIBDIR)/kairoslib $(PREFIX)/bin:
+$(LIBDIR)/kairoslib $(PREFIX)/bin $(PREFIX)/share/man/man1:
 	mkdir -p $@
 
 $(PREFIX)/share/man/man1/kairos.1: man/kairos.1 | $(PREFIX)/share/man/man1
 	cp -f --no-preserve=ownership $< $@
-
-$(PREFIX)/share/man/man1 $(PREFIX)/bin:
-	mkdir -p $@
 
 $(PREFIX)/bin/kairos: $(LIBDIR)/kairos | $(PREFIX)/bin
 	ln -snf ../lib/kairos/kairos $@
