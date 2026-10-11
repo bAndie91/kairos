@@ -306,6 +306,7 @@ class _Parser:
     def parse_clause(self) -> Clause:
         fields: Dict[str, tuple] = {}
         tz: Optional[str] = None
+        first_index = self.i
         while not self.at_end() and not self.at("COMMA") and not self.at("PLUS") and not self.at_keyword():
             tok = self.peek()
             assert tok is not None
@@ -322,7 +323,9 @@ class _Parser:
             values = self.parse_item(kind)
             name = _KIND_FIELD[kind]
             if name in fields:
-                raise _fail(f"duplicate {kind} item in one clause (join values with ',' to make a list)")
+                raise _fail(
+                    f"duplicate {kind} item {tok.text!r} in one clause (join values with ',' to make a list)"
+                )
             fields[name] = values
         if not fields:
             tok = self.peek()
@@ -332,7 +335,8 @@ class _Parser:
                     f"e.g. '5 days {tok.text.casefold()} Dec 24'"
                 )
             raise _fail("a clause needs at least one non-time-zone item")
-        return self.finish_clause(fields, tz)
+        shown = " ".join(t.text for t in self.toks[first_index:self.i])
+        return self.finish_clause(fields, tz, shown)
 
     def parse_item(self, kind: str) -> tuple:
         values = []
@@ -345,6 +349,7 @@ class _Parser:
         return tuple(values)
 
     def parse_value(self, kind: str):
+        first_tok = self.peek()
         first = self.parse_atom(kind)
         if self.at("DASH"):
             dash = self.take()
@@ -356,7 +361,8 @@ class _Parser:
             if self.kind_of(nxt) != kind:
                 raise _fail(f"mixed-kind range: {kind.lower()} followed by '-' and {nxt.text!r}")
             second = self.parse_atom(kind)
-            return self.make_range(kind, first, second)
+            assert first_tok is not None
+            return self.make_range(kind, first, second, f"{first_tok.text}-{nxt.text}")
         return self.make_point(kind, first)
 
     def parse_atom(self, kind: str):
@@ -413,29 +419,29 @@ class _Parser:
             return atom
         return (atom, atom)
 
-    def make_range(self, kind: str, a, b):
+    def make_range(self, kind: str, a, b, shown: str = ""):
         if kind == "TIME":
             (s1, sec1, is24a), (s2, _sec2, _is24b) = a, b
             if is24a:
                 raise _fail("'24:00' is only valid as the end of a time range")
             if s1 == s2:
-                raise _fail("time range with equal ends")
+                raise _fail(f"time range {shown!r} has equal ends (it would be empty or 24 hours)")
             return TimeSpec(s1, s2, sec1)
         if kind == "YEAR" and a > b:
             raise _fail(f"year range {a}-{b} must have start <= end")
         return (a, b)
 
-    def finish_clause(self, fields: Dict[str, tuple], tz: Optional[str]) -> Clause:
+    def finish_clause(self, fields: Dict[str, tuple], tz: Optional[str], shown: str = "") -> Clause:
         if "dates" in fields and any(k in fields for k in ("years", "months", "doms")):
-            raise _fail("a date cannot be combined with a year, month or day-of-month in one clause")
+            raise _fail(f"{shown!r}: a date cannot be combined with a year, month or day-of-month in one clause")
         times = fields.get("times", ())
         if times and len({t.end is None for t in times}) > 1:
-            raise _fail("a time list may not mix point times and time ranges")
+            raise _fail(f"{shown!r}: a time list may not mix point times and time ranges")
         if "months" in fields and "doms" in fields:
             months = {m for r in fields["months"] for m in _expand(r, 12, 1)}
             doms = {d for r in fields["doms"] for d in _expand(r, 31, 1)}
             if not any(self.exists(m, d) for m in months for d in doms):
-                raise _fail("this month/day combination never exists")
+                raise _fail(f"{shown!r}: this month/day combination never exists")
         return Clause(tz=tz, **fields)
 
     @staticmethod
