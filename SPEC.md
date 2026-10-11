@@ -1,6 +1,6 @@
 # kairos — specification
 
-Status: **DRAFT 0.1 — for review.** Nothing is implemented yet. See `PLAN.md` for the execution plan.
+Status: **DRAFT 0.1.** Implemented except for the items listed in `PLAN.md`, which is the work plan; this document is the source of truth for behaviour.
 
 `kairos` is a modular Python 3 command-line tool for Linux: a **time-based arbitrary state registry**. The command is a small executable launcher backed by a Python package; implementation units belong in separate modules as described in §1.1.
 A config file maps time intervals to free-text *state* names. Run the tool and it prints
@@ -23,7 +23,7 @@ author: i stroke through what i don't want (most your decisions i agree with) an
 | D4 | Command macros (`NAME := ! cmd`) vs. "intervals not covering the current time are skipped" | ~~Commands run eagerly, in file order, during the single parse pass. In the default mode, subtrees under a parent that is **not active at the evaluation time** are skipped (their commands do not run).~~ `--next-change` and `--check` never skip. (§5.4) | Lazy evaluation (run a command when its macro is first used) | do lazy eval |
 | D5 | `Easter := ! ncal -e` | `ncal -e` prints a **locale-dependent, US-style** date (`04/05/26` on my test machine), which the INTERVAL grammar (ISO dates only) rejects. The example parses as a macro definition but would fail on use. Use a wrapper such as `! date -d "$(ncal -e)" +%F`. Also: a command's output is a snapshot, so a recurring date computed by a command is only valid for the year it was computed in (§5.5). | ~~Accept `MM/DD/YY` (rejected: locale-dependent, ambiguous)~~ | ignore what you `ncal` outputs. keep that `date` command in the examples. no introduce mm/dd/yy format. |
 | D6 | `40 days until Dec 24` | End is the **end of the whole anchor instance** (so Dec 24 itself is included, mirroring `--` whose end date is inclusive). Range = Nov 15 00:00 → Dec 25 00:00. (§9) | ~~End at the *start* of Dec 24~~ | "until Dec 24" means "up to and including Dec 24" |
-| D7 | `~` in a STATE whose parent has no STATE | ~~Parse error.~~ | Inherit from the nearest ancestor with a STATE |
+| D7 | `~` in a STATE whose parent has no STATE | ~~Parse error.~~ | Inherit from the nearest ancestor with a STATE | author: inherit; it is an error only when no ancestor has a STATE. (§4.4) |
 | D8 | Macro redefinition | Error if the name is already **visible** (same scope or an enclosing active scope). Sibling scopes may reuse a name. (§5.3) | ~~Error only in the very same scope (allow shadowing)~~ |
 | D9 | TZ abbreviations | Use IANA TZDB for zone rules and its supplied abbreviations for display; do not maintain a hand-written abbreviation-to-zone map. Since abbreviations are ambiguous and do not identify a unique zone, accept only IANA zone IDs, numeric UTC offsets, and explicit UTC/GMT/Z forms in §8.1. | ~~Hand-written representative-zone mapping~~ | Examples such as `CEST → Europe/Berlin` were illustrative only, not required mappings. |
 | D10 | Dependencies | stdlib (`datetime`, `zoneinfo`) + `python-dateutil` (`relativedelta`) + `tzlocal` (local zone discovery) + system `tzdata`. (§12) | ~~stdlib only (hand-rolled local-zone discovery)~~ |
@@ -31,8 +31,9 @@ author: i stroke through what i don't want (most your decisions i agree with) an
 | D12 | `--config PATH` that does not exist | Error (exit 2); the default file is created only when **no** config is specified and none is found. (§3.2) | ~~Create it at PATH~~ |
 | D13 | `--next-change` with nothing ahead | No arbitrary horizon; print nothing and exit 0 if no future change exists. (§10) | ~~A fixed horizon and exit 1~~ | Search candidate boundaries, then prove exhaustion using the finite Gregorian recurrence cycle after all finite exceptions and duration tails. Include the future recurrence rules of the active TZif zones; don't scan every second/date to eternity. |
 | D17 | Macro names | NAME is any text before the first `:=` (no `=`, not starting with `!`, at least one letter): spaces and punctuation are allowed (`Mary's birthday`), and a name may start with or contain another macro's name as long as the whole name differs. Longest name wins when expanding; only identical names clash (D8). (§4.1, §5.2, §5.3) | ~~Identifiers only (`[A-Za-z_][A-Za-z0-9_]*`)~~ | confirmed by the author |
-| D18 | Command macro failures | A command macro is not executed when it is defined, so a non-zero exit status is an error when the macro is *evaluated* (first used by a line that is not skipped), never at definition/parse time. An unused macro never runs, even under `--check`. (§2, §5.1, §5.4, §11, V12) | ~~`--check` runs every command macro~~ | confirmed by the author |
+| D18 | Command macro failures | A command macro is not executed when it is defined, so a non-zero exit status is an error when the macro is *evaluated*, never at definition/parse time. In default mode and with `--next-change` that is when a line that is not skipped first uses it, so an unused macro never runs. **`--check` is the exception: it evaluates every command macro, used or not**, so a failing command is reported at its macro line. (§2, §5.1, §5.4, §11, V12) | ~~`--check` never runs an unused macro~~ | author: `--check` runs all command macros |
 | D19 | Unions of relative expressions | `2 days before X, 3 days after Y` and `Apr 1, 2 days before X` are allowed: an INTERVAL is a comma-separated list of *parts*, each a plain term or a whole relative expression (`+`, `until`, `before`, `after`); the result is the union of the parts. The anchor of a relative expression is **one term** (a clause or a span). A comma ends the relative expression even when no whitespace follows it: `2 days before Apr 10,20` and `2 days before Apr 10, 20` both mean Apr 8 and Apr 20. A comma followed by `NUMBER unit` never continues a day/year list. (§6.4, §6.6, §9.2) | ~~A relative expression must be the whole INTERVAL; the anchor is a union of all following terms~~ | confirmed by the author |
+| D20 | `--at` forms | Besides the full `YYYY-MM-DD[ T]HH:MM[:SS][offset]`, `--at` accepts a bare date `YYYY-MM-DD` (that day, 00:00) and a bare time `HH:MM[:SS]` (today, or tomorrow with a warning when today's time passed more than 12 hours ago). (§2.3, V18) | ~~Full form only~~ | author's decision |
 
 **Additions beyond your brief** (strike any you do not want): options `--at`, `--tz`, `--format`,
 `--check`, `--print-default-config`, `--version`; env var
@@ -100,11 +101,11 @@ kairos [OPTIONS]
 | Option | Meaning |
 |--------|---------|
 | `-c FILE`, `--config FILE` | Use FILE instead of the XDG lookup. `-` reads the config from stdin. |
-| `--at DATETIME` | Evaluate at DATETIME instead of now. ISO 8601: `YYYY-MM-DD[ T]HH:MM[:SS][offset]`. Without an offset it is interpreted in the display zone. Sub-seconds are truncated. |
+| `--at DATETIME` | Evaluate at DATETIME instead of now: `YYYY-MM-DD[ T]HH:MM[:SS][offset]`, a bare date `YYYY-MM-DD`, or a bare time `HH:MM[:SS]` (§2.3). Without an offset it is interpreted in the display zone. Sub-seconds are truncated. |
 | `-n`, `--next-change` | Print the next instant (after "now" or after DATETIME if `--at` is specified) at which the set of reported states changes, instead of the states. |
 | `--tz ZONE` | Default time zone (IANA name, or any form from §8.1). Used for intervals without an explicit zone and for printing. Default: `$TZ`, else the system zone. |
 | `--format FMT` | Output format of `--next-change`. A `strftime` string, or the keywords `iso` (ISO 8601 with offset) or `epoch` (Unix seconds). Default `%Y-%m-%d %H:%M:%S`. |
-| `--check` | Fully parse the config (no subtree skipping, so every command macro that a line uses is evaluated), print nothing, exit 0 if valid. A command macro that no line uses is never evaluated (D18). |
+| `--check` | Fully parse the config (no subtree skipping) and evaluate **every** command macro, whether or not a line uses it (D18); print nothing, exit 0 if valid. A command macro that fails is an error at its macro line. |
 | `--print-default-config` | Print the default config text to stdout and exit. |
 | `-V`, `--version`, `-h`, `--help` | As usual. |
 
@@ -123,6 +124,18 @@ kairos [OPTIONS]
 | 2 | Error: usage, I/O, parse error, macro command failure. |
 
 Error message format on stderr: `kairos: PATH:LINE: error: MESSAGE` (or `kairos: error: MESSAGE` when no line applies).
+
+### 2.3 `--at` forms
+
+`--at` takes one of three forms. A form without an offset is local time in the display zone; a nonexistent or ambiguous local time follows §7.1 (PEP 495). Sub-seconds are truncated.
+
+| Form | Meaning |
+|------|---------|
+| `YYYY-MM-DD[ T]HH:MM[:SS][offset]` | that instant; `offset` is `Z` or `±HH[[:]MM]` |
+| `YYYY-MM-DD` | the start of that day, `YYYY-MM-DD 00:00:00` (no offset) |
+| `HH:MM[:SS]` | a time of day (no offset): today's date, or tomorrow's under the rule below |
+
+**Bare time.** "Today" is the current date in the display zone. Let `c` be that date at the given time. If `c` lies **more than 12 hours** in the past, the time is taken on the **next** day instead, and a warning goes to stderr naming both the given time and the date used, e.g. `kairos: warning: --at 06:00 passed 14 hours ago; using tomorrow, 2026-10-10 06:00:00`. Otherwise `c` stays today, whether it is later today or already passed up to 12 hours ago (exactly 12 hours counts as "not more than"). So at 20:00, `--at 06:00` means tomorrow 06:00 (with the warning), while at 15:00, `--at 14:00` stays today (no warning), and `--at 22:00` at 20:00 is today. Of the three forms only the bare time depends on the current time; with `--next-change` the resolved instant is the base like any other `--at`. See V18.
 
 ---
 
@@ -146,7 +159,7 @@ using it. If `--config` names a file that does not exist: error, nothing created
 
 ### 3.3 Default config content
 
-The default config has **no active lines**. It begins with brief usage instructions, then an examples section. The complete command-line and configuration reference lives in `man/kairos.1`; do not duplicate it in the default config.
+The default config has **no active lines** and consists of examples. It may open with a short `## ` header that says where the documentation is (`man kairos`, `kairos --check`, `kairos --print-default-config`). The complete command-line and configuration reference, including the macro-command security note (§12), lives in `man/kairos.1`; do not duplicate it in the default config.
 
 Every example config line is written as `# ` followed by the original line (indentation preserved after that single space). **Test requirement:** stripping the leading `# ` from example lines must yield a config that parses successfully. Explanatory prose inside the block goes in lines starting with `## `, which the test ignores. Include all examples from the brief, with `Easter` using the working wrapper from D5.
 
@@ -189,8 +202,8 @@ Macro lines take part in indentation (§5.3) but cannot have children.
 Free text. Escapes: `\~` is a literal `~`, `\@` is a literal `@` (only meaningful as the first character), `\\` is a backslash. Any other
 backslash sequence is an error. Macros are **not** expanded in STATE.
 
-* `~` is replaced by the **effective name** of the parent line (after the parent's own `~` substitution and without its leading `@`).
-  Parent has no STATE → error (D7). Top-level line using `~` → error.
+* `~` is replaced by the **effective name** of the nearest ancestor line that has a STATE (after that line's own `~` substitution and without its leading `@`): the parent if it has a STATE, otherwise the grandparent, and so on (D7).
+  No ancestor has a STATE → error. A top-level line using `~` → error.
 * A STATE starting with `@\s*` is **hidden**: not reported, but its name (without `@\s*`) is what children see as `~`.
   A bare `@` (empty name) is an error.
 * Whitespace inside STATE is preserved; leading/trailing whitespace is trimmed.
@@ -210,7 +223,7 @@ NAME := ! COMMAND         shell command; its stdout is the value
   A STRING cannot start with a literal `!` (that always means COMMAND).
 * COMMAND: run with `${SHELL:-/bin/sh} -c COMMAND`, stdin from `/dev/null`, stderr passed through,
   Multiline output collaptsed into 1 line by `s/\n/ /g`. Trailing newline is stripped. 
-  Exit status ≠ 0 → error, reported (with the macro's file and line) at the moment the command is evaluated, i.e. when a line first uses the macro (§5.4, D18). A definition alone never runs anything, so it cannot fail.
+  Exit status ≠ 0 → error, reported (with the macro's file and line) at the moment the command is evaluated, i.e. when a line first uses the macro, or for every macro under `--check` (§5.4, D18). A definition alone never runs anything, so it cannot fail.
   Macros are **not** expanded in COMMAND text. Instead the environment contains:
   * everything inherited from the caller;
   * `KAIROS_MACRO_<NAME>` for every macro visible at that point (their resolved values). NAME is used **as is**, without any transformation: the variable for `Mary's birthday` is named `KAIROS_MACRO_Mary's birthday`. Kairos does not check or special-case anything (not `=`, not `\0`): it hands the variable to the operating system / language runtime like any other. If that refuses a variable, Kairos prints a warning naming the macro to stderr, leaves that variable out and carries on running the command. The shell may well be unable to read such a variable (`$KAIROS_MACRO_Mary's birthday` is not valid shell); that is not Kairos's concern;
@@ -241,12 +254,13 @@ Before an INTERVAL (or macro STRING) is lexed, every occurrence of a visible mac
 ### 5.4 When commands run (D4)
 
 Parsing is one pass over the file, top to bottom; each macro command runs when its macro name is being resolved (lazy).
-Defining a command macro does not run it, so a command failure (non-zero exit status) is an **evaluation-time** error, not a parse-time one (D18): it is raised when the first line that uses the macro is evaluated, and only then. A command macro that is never used, or is used only in a skipped subtree (default mode), never runs and never fails. The value of a command that ran is kept; later uses do not run it again.
+Defining a command macro does not run it, so a command failure (non-zero exit status) is an **evaluation-time** error, not a parse-time one (D18): it is raised when the command is evaluated, at the macro's line. Except under `--check`, that happens when the first line that uses the macro is evaluated, and only then: a command macro that is never used, or is used only in a skipped subtree (default mode), never runs and never fails. The value of a command that ran is kept; later uses do not run it again.
 
 * **Default mode** (print states): when the parser reaches a subtree whose parent's effective set does **not** contain the
   evaluation instant, the subtree is *skipped*: macro commands inside it do not run, and lines that depend on a skipped
   command macro are only structurally validated (indentation, line kind). All other lines are fully parsed and validated.
-* **`--next-change` and `--check`**: never skip, so every command macro used by any line is evaluated (and a failing one is reported); a macro no line uses still never runs.
+* **`--next-change`**: never skips, so every command macro used by any line is evaluated (and a failing one is reported); a macro no line uses never runs.
+* **`--check`**: never skips and evaluates **every** command macro, including ones no line uses. An unused macro is evaluated with the context of its own position: `KAIROS_INTERVAL_<LEVEL>` / `KAIROS_STATE_<LEVEL>` describe the lines above it that enclose it (§5.1).
 
 ### 5.5 Known limitation
 
@@ -529,21 +543,21 @@ Output is formatted in the display zone with `--format`. During a DST fold the d
 Syntax and semantic errors, each reported with file and line:
 
 bad indentation / first line indented; macro with children; unknown word (every one of them is reported, with a `wrong locale?` hint where one applies);
-macro name reserved, already visible, empty, without a letter or starting with `!`; macro command failed (when evaluated, D18); duplicate item kind in a clause;
+macro name reserved, already visible, empty, without a letter or starting with `!`; macro command failed (when evaluated, D18; under `--check` every command macro is evaluated); duplicate item kind in a clause;
 mixed-kind range; time range with equal ends; numbers out of range; `*` outside `ISODATE`; 
-span with lists/ranges, missing time on one side, end before start with explicit year; `~` without parent; empty INTERVAL;
+span with lists/ranges, missing time on one side, end before start with explicit year; `~` with no ancestor that has a STATE; empty INTERVAL;
 unknown IANA zone ID, invalid offset, or unsupported alphabetic timezone abbreviation; bad `--at`/option values.
 
 ---
 
 ## 12. Implementation constraints
 
-* One executable file `kairos`, `#!/usr/bin/env python3`, Python ≥ 3.9. No other source files are needed to run it.
+* Python ≥ 3.9. The command `kairos` is a thin executable launcher (`#!/usr/bin/env python3`) that imports the implementation from the `kairoslib/` package (§1.1). The implementation is **not** a single-file script: it is split into module files, and further module files may be added where that keeps a unit's ownership clear.
 * Allowed third-party: `python-dateutil`, `tzlocal`; system `tzdata`, may add other imports if need emerges during implementation.
 * **All** calendar, weekday, month-length, leap-year, zone, DST, month/year arithmetic, and locale-dependent month/weekday name interpretation goes through the relevant standard/library facilities (`datetime`, `calendar`, `locale`, `zoneinfo`, `dateutil`). Scanning days with a `for` loop over `datetime.date` is fine but to be minimized; re-implementing leap-year, locale precedence, name tables, case rules, or zone rules is not.
 * Month and weekday names are interpreted according to the process's effective `LC_TIME` locale. Initialize/use locale handling through Python's `locale` module in a way that follows the platform's environment locale selection, including `LC_TIME` taking precedence over `LANG` (and `LC_ALL` taking precedence over both when set). Do not infer the locale by manually inspecting environment variables, and do not hard-code translations, aliases, transliterations, or fallback English names. Delegate name production/recognition to locale-aware date/time facilities (for example, `datetime`/`time` formatting and parsing backed by `locale`, or equivalent library APIs). The locale used for lexing/reserved-word checks and semantic date evaluation must be consistent for one invocation.
 * Interval *set algebra* (union / intersection / subtraction / clipping of lists of `(start, end)` instants) is the tool's own code.
-* Macro commands are arbitrary code run with the user's privileges. There is no sandbox (documented in the default config).
+* Macro commands are arbitrary code run with the user's privileges. There is no sandbox. This security note is documented in the man page (`man/kairos.1`), not in the default config, which contains examples only (§3.3).
 
 ---
 
@@ -632,7 +646,7 @@ at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names 
   - `01:00-04:00 = crossing` spans `[2026-10-24 23:00:00, 2026-10-25 03:00:00)` UTC: active at 00:30:00, 01:30:00, and 02:30:00 UTC, inactive at 03:00:00 UTC.
   - `Mon-Fri 08:00-16:00 = work`: verify local wall-clock endpoints remain 08:00–16:00 and that UTC boundaries are one hour later than in summer after the fall-back.
 
-Command failures are evaluation-time errors (D18): `X := ! false` on its own is valid (exit 0, even with `--check`: nothing uses `X`, so nothing runs); it is an error only once a line uses `X`, and in default mode not if that line sits in a skipped subtree.
+Command failures are evaluation-time errors (D18): `X := ! false` on its own is valid in default mode and with `--next-change` (exit 0: nothing uses `X`, so nothing runs); it is an error once a line uses `X`, and in default mode not if that line sits in a skipped subtree. `--check` runs every command macro, so `X := ! false` fails it (exit 2, reported at the macro's line) whether or not a line uses `X`.
 
 Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` is `[08:00:00, 10:00:00)` (§9: the result starts at the instance start).
 
@@ -667,8 +681,15 @@ Apr 1, 2 days = oops
 - Locale setup occurs before lexing. Verify locale-aware matching is case-insensitive only to the extent provided by the chosen date/time facilities, and that non-ASCII characters such as `á` survive tokenization and matching.
 - Run a subprocess per locale so Python's process-global locale state cannot leak between tests. Never require an unavailable locale to be installed; report a skip for that locale.
 
+**V18** `--at` bare forms (`tz=Europe/Budapest`; the current time is a parameter of the resolving function, so tests never read the wall clock). Config `06:00-07:00 = x`:
+- `--at 2026-10-09` is `2026-10-09 00:00:00`: `x` is not active; `--at 2026-10-09` with `00:00-01:00 = y` shows `y`.
+- Now = `2026-10-09 20:00:00`: `--at 06:00` → `2026-10-10 06:00:00` (`x`, plus the stderr warning naming `06:00` and `2026-10-10`); `--at 08:00:01` → today `2026-10-09 08:00:01`, no warning (11 h 59 m 59 s ago); `--at 08:00` → today (exactly 12 hours ago is not "more than"), no warning; `--at 07:59:59` → tomorrow, with the warning; `--at 22:00` → today (later today), no warning.
+- Now = `2026-10-09 15:00:00`: `--at 14:00` → `2026-10-09 14:00:00`, no warning.
+- Now = `2026-10-09 01:06:00`: `--at 23:00` → today `2026-10-09 23:00:00` (still ahead), no warning.
+- Bare time with an offset (`06:00Z`) and a bare date with an offset (`2026-10-09Z`) are errors; so are `24:00`, `6:00x` and `HH:MM` out of range. With `--next-change`, `--at 06:00` (now 20:00 as above) searches from `2026-10-10 06:00:00`.
+
 ---
 
 ## 14. Possible future work (not in v1)
 
-weekday spans (`Mon 08:00 -- Fri 17:00`), n-th weekday syntax, config includes, man page.
+weekday spans (`Mon 08:00 -- Fri 17:00`), n-th weekday syntax, config includes.
