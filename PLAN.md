@@ -1,6 +1,6 @@
 # kairos — execution plan
 
-Status: **DRAFT 0.1 — in progress, M0–M7 accepted; M8 (`--next-change`) and M9 (default config text, docs) remain.** Companion to `SPEC.md`, which is the source of truth for behaviour.
+Status: **DRAFT 0.1 — all milestones M0–M14 done; only the author's manual review run (M9 acceptance) and the Python 3.9 check remain.** Companion to `SPEC.md`, which is the source of truth for behaviour.
 This plan is written so that an agent with no other context can pick it up and continue.
 
 ## 0. How to use this plan (read first)
@@ -280,12 +280,20 @@ Completed (`names.installed_locales` / `names.locales_with_name`, `lexer.tokeniz
 
 This milestone can draft prose and README material during M6, but executable-example checks and final acceptance depend on M1 and M7 being integrated.
 
-- [ ] The default config text and docs describe `D before ANCHOR` / `D after ANCHOR` (SPEC §9.1), several parts in one INTERVAL (`Apr 1, 2 days before X`, SPEC §9.2), macro names with spaces and punctuation (SPEC §5.3) and that month/weekday names follow the `LC_TIME` locale (SPEC §11).
-- [ ] Write the final default config text (SPEC §3.3), including the brief's examples with the working `Easter` wrapper
+- [x] The default config text and docs describe `D before ANCHOR` / `D after ANCHOR` (SPEC §9.1), several parts in one INTERVAL (`Apr 1, 2 days before X`, SPEC §9.2), macro names with spaces and punctuation (SPEC §5.3) and that month/weekday names follow the `LC_TIME` locale (SPEC §11).
+- [x] Write the final default config text (SPEC §3.3), including the brief's examples with the working `Easter` wrapper
       (`Easter := ! date -d "$(ncal -e)" +%F`) and the security note about macro commands.
-- [ ] Test: extract the examples block, strip `# `, ignore `## ` lines, run `--check` (with the fake `ncal`) → exit 0. Also: `--print-default-config` equals the file created in M1.
-- [ ] `README.md`: purpose, install (list of dependencies, Debian package names `python3-dateutil python3-tzlocal tzdata`), usage examples, pointer to SPEC.
-- [ ] Review stderr messages for every V12 case: file, line, and the token.
+- [x] Test: extract the examples block, strip `# `, ignore `## ` lines, run `--check` (with the fake `ncal`) → exit 0. Also: `--print-default-config` equals the file created in M1.
+- [x] `README.md`: purpose, install (list of dependencies, Debian package names `python3-dateutil python3-tzlocal tzdata`), usage examples, pointer to SPEC.
+- [x] Review stderr messages for every V12 case: file, line, and the token.
+
+Completed (`kairoslib/defaults.py`, `README.md`, `tests/test_defaults.py`, small message changes in `kairoslib/parser.py`, Makefile fixes). Notes and interpretation choices to review:
+
+- **Default text conventions.** Every line starts with `#`, so a fresh config is inert. `## ` lines are prose; every other `#` line is `# ` + the original config line (indentation kept after that one space). The prose is the condensed SPEC §4–§9, §11 (locale), §1 (out-of-scope list) and the macro-command security note. `tests/test_defaults.py` extracts the examples strictly (a `#` line that is neither `## ` prose nor `# ` + line fails the test), runs `--check` with the fake `ncal` and `date -d` (skipped if GNU `date` is missing), spot-checks states through the stubbed Easter, `~`/`@` and negation, and checks that `--print-default-config` equals both the constant and the file M1 creates.
+- **The brief is not in the repository**, so the examples block is reconstructed from the SPEC's own examples and vectors (V1–V10, V16, V17, the `Easter` wrapper) rather than copied from the brief's list. If the brief has examples that are not covered, add them to the block; `tests/test_defaults.py` will check them.
+- **Diagnostics.** All V12 cases already reported file and line. Three did not name the offending text and now do: a duplicate item (`duplicate WEEKDAY item 'Tue' in one clause`), a clause with an impossible month/day (`the month/day combination in 'Feb 30' never exists`, quoting the original source text via `Token.pos`) and equal time-range ends (`time range with equal ends (08:00-08:00)`). Regression test: `test_error_messages_name_the_offending_token` in `tests/test_parser.py`.
+- **Makefile.** `make install` was broken: it listed the package with the non-existent `git ls` and never created `$(PREFIX)/bin`. It now uses `$(wildcard kairoslib/*.py)` (also works from a tarball) and creates the bin directory; verified install, running the installed `kairos`, and uninstall in a scratch prefix.
+- **Verification.** Full suite (311 tests, 18 skipped for locales that are not installed) passes on Python 3.11, 3.12 and 3.13; every source file parses with the 3.9 grammar (`ast.parse(feature_version=(3, 9))`), but 3.9 itself is not available in the sandbox. Not done: the manual run on the author's own config.
 
 **Acceptance:** `make test` green on a clean checkout; a manual run on the reviewer's own config produces sensible output.
 
@@ -341,7 +349,7 @@ This milestone can draft prose and README material during M6, but executable-exa
 
 - [x] SPEC §8: Cite IANA TZDB and Python `zoneinfo`; explain that zone abbreviations are zone/date-dependent labels, not unique IDs; add local commands for listing IANA zone IDs and inspecting an abbreviation at an instant.
 - [x] SPEC §8.1: legacy IANA IDs that look like abbreviations (`CET`, `EET`, `WET`, `MET`, `EST`, `MST`, `HST`, `PST8PDT`) conflict with "reject bare abbreviations". Resolved: the IANA ID lookup comes first, so those IDs are accepted as zones; only alphabetic names absent from `available_timezones()` are rejected (D14).
-- [ ] Validate the V14 transition expectations against the actual `zoneinfo` behavior on supported Python versions and make any discrepancy an explicit spec decision, not an undocumented implementation adjustment.
+- [ ] Validate the V14 transition expectations against the actual `zoneinfo` behavior on supported Python versions and make any discrepancy an explicit spec decision, not an undocumented implementation adjustment. Status: the V14 boundary tests (`tests/test_evaluate.py`, `tests/test_cli_states.py`) pass on Python 3.11, 3.12 and 3.13 with no discrepancy; 3.9 and 3.10 could not be run here.
 - [x] SPEC §6.1 `HHh`/`MMm`/`MMmin`: resolved (D15). `8h` = `8:*`, `30m`/`30min` = `*:30`; they are the kinds `HOUR`/`MINUTE`, with inclusive wrapping ranges and lists, combinable with `TIME` in one clause (all must hold). Evaluation: each group yields the daily windows, which are intersected.
 - [x] Point times: `08:00` lasts one minute, `08:00:30` lasts exactly one second (SPEC §6.2; `TimeSpec.seconds`).
 - [x] `UTC + 2 hours` is a zone plus a duration; `UTC+2 hours` is an error because `hours` has no number (SPEC §6.2).
