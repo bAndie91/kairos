@@ -327,6 +327,23 @@ class ErrorTests(unittest.TestCase):
                 parse_interval(text)
             self.assertIn(needle, ctx.exception.message)
 
+    def test_error_messages_name_the_offending_token(self) -> None:
+        # PLAN M9: every V12 diagnostic carries the text that caused it.
+        cases = {
+            "Mon Tue": "'Tue'",
+            "Feb 30": "'Feb 30'",
+            "Apr,Jun 31": "'Apr,Jun 31'",
+            "08:00-08:00": "08:00-08:00",
+            "Mon 09:30 - 09:30": "09:30-09:30",
+            "08:00-25:00": "'25:00'",
+            "2026-02-29": "'2026-02-29'",
+            "Mon Foo/Bar": "'Foo/Bar'",
+        }
+        for text, needle in cases.items():
+            with self.subTest(text=text), self.assertRaises(IntervalKeeperError) as ctx:
+                parse_interval(text)
+            self.assertIn(needle, ctx.exception.message)
+
     def test_spec_example_intervals_parse(self) -> None:
         for text in (
             "08:00-16:00", "12:00-13:00", "Jun,Jul,Aug", "Sun", "20:00-23:00", "*-*-01", "Sun,Sat", "1-7 Mon + 5 day",
