@@ -7,13 +7,13 @@ This plan lists what is done (§3, traces only) and what remains (§4, one item 
 
 1. Pick **one** item from §4 (the lowest-numbered one whose dependencies are done, unless told otherwise). Do only that item, then stop. Each item is sized for a single short session: read only the SPEC sections it names, run the focused tests while working and the full suite (`make test`, about 35 s) once at the end.
 2. `SPEC.md` wins over this plan. If the spec is ambiguous or contradicts itself, record the exact conflict in §5 and ask the author; do not guess and do not silently pick a parse error. Behaviour is changed in `SPEC.md` only in a separate commit whose message starts with `spec:` (decisions are D1–D20 in SPEC §0).
-3. When an item is finished and its acceptance checks pass, **delete it from §4** and, if it completes part of the spec, add a one-line trace to §3. Do not leave checked-off boxes or completion diaries behind.
+3. When an item is finished and its acceptance checks pass, **delete it from §4** and, if it completes part of the spec, add a one-line trace to §3.
 4. Commit small, imperative subject line (`Run unused command macros under --check`). Never commit credentials.
 
 ## 1. Hard constraints
 
-* Python ≥ 3.9. The root `kairos` is a thin executable launcher; implementation code lives in the `kairoslib/` package, in module files (never a single script).
-* **No hand-written calendar logic.** Month lengths, leap years, weekdays, time zones, DST and month/year arithmetic come from `datetime`, `calendar`, `zoneinfo`, `dateutil.relativedelta`; month/weekday names from the locale-aware library tables. Only interval set algebra (lists of `(start, end)` instants) is custom. Fixed unit constants (60, 3600, 86400 seconds) are fine.
+* Python ≥ 3.9. The root `kairos` is a thin executable launcher; implementation code lives in the `kairoslib/` package, in module files.
+* **No hand-written calendar logic.** Month lengths, leap years, weekdays, time zones, DST and month/year arithmetic come from `datetime`, `calendar`, `zoneinfo`, `dateutil.relativedelta`; month/weekday names from the locale-aware library tables.
 * On parse or semantic errors: message on stderr with file and line, keep parsing to report the other failing lines, exit 2 at the end, **empty stdout**.
 * Config lookup via XDG; the default config is created only when none is found and no `--config` was given; a missing explicit `--config PATH` is an error and is never created.
 * Dependencies: stdlib, `python-dateutil`, `tzlocal`, system `tzdata`.
@@ -49,19 +49,7 @@ Module `names.py` is the only place that knows about locales; AST dataclasses li
 
 Items T1–T8 are independent of each other; T9 comes after T1, T2 and T4.
 
-### T1 — `--check` evaluates every command macro (SPEC §2, §5.4, D18, V12 tail)
-
-Read: SPEC §5.1, §5.4, D18, the V12 tail. Files: `kairoslib/states.py`, `kairoslib/cli.py`, `kairoslib/macros.py` (only if needed); tests; `man/kairos.1`; `README.md`.
-
-* `build_lines` gets a flag (e.g. `run_all_commands`), set only by `--check`. After the walk it resolves every command macro that is still unresolved, in each scope, using that scope's context (`KAIROS_INTERVAL_<LEVEL>` / `KAIROS_STATE_<LEVEL>` of the enclosing lines only; top-level macros have none). Each command runs at most once; a failure is reported at the macro's line through the existing `ErrorList`.
-* Default mode and `--next-change` stay lazy: an unused command macro never runs there.
-* Update the tests that assert the old behaviour: `tests/test_cli_states.py::test_command_failure_is_an_evaluation_time_error` (`X := ! false` alone: exit 0 in default mode and `--next-change`, exit 2 with `--check`, error at `<stdin>:1`) and `tests/test_states.py::test_a_failing_command_is_an_error_only_when_a_line_evaluates_it`.
-* Add: a marker-file test showing an unused macro runs under `--check` and not otherwise; a macro inside a subtree sees `KAIROS_INTERVAL_0`; the default-config examples still pass `--check` (fake `ncal`).
-* Docs: man page macro section ("`--check` also runs command macros that no line uses"), README `--check` row, `--check` help text.
-
-Acceptance: `make test` green; the three cases above behave as stated.
-
-### T2 — `--at` bare date and bare time (SPEC §2.3, D20, V18)
+### T1 — `--at` bare date and bare time (SPEC §2.3, D20, V18)
 
 Read: SPEC §2.3, D20, V18. Files: `kairoslib/cli.py` (`parse_at`; move to a small module only if that is cleaner), new `tests/test_at.py`; `man/kairos.1`; `README.md`.
 
@@ -73,14 +61,18 @@ Read: SPEC §2.3, D20, V18. Files: `kairoslib/cli.py` (`parse_at`; move to a sma
 
 Acceptance: V18 rows pass; `kairos --at 2026-10-09` and `kairos --at 06:00` work from the command line.
 
-### T3 — Fix `make install` (Makefile)
+### T2 — `--check` evaluates every command macro (SPEC §2, §5.4, D18, V12 tail)
 
-Files: `Makefile`, new `tests/test_install.py`.
+Read: SPEC §5.1, §5.4, D18, the V12 tail. Files: `kairoslib/states.py`, `kairoslib/cli.py`, `kairoslib/macros.py` (only if needed); tests; `man/kairos.1`; `README.md`.
 
-* `LIBFILES` uses `$(shell git ls kairoslib/)` (not a git command): nothing from `kairoslib/` is installed and the installed launcher fails with `No module named 'kairoslib.cli'`. Use `$(wildcard kairoslib/*.py)` (works from a tarball, ignores `__pycache__`); keep the man page install, the `bin` symlink and `PREFIX` handling; `make uninstall` leaves nothing behind.
-* Test (skip if `make` is missing): `make install PREFIX=<tmp>`, run `<tmp>/bin/kairos --version` and `--print-default-config`, check `<tmp>/share/man/man1/kairos.1` exists, then `make uninstall` and assert the prefix holds no files.
+* in `--check` mode, command macros are evaluated at definition time, not lazy.
+* Default mode and `--next-change` stay lazy: an unused command macro never runs there.
+* Update the tests that assert the old behaviour: `tests/test_cli_states.py::test_command_failure_is_an_evaluation_time_error` (`X := ! false` alone: exit 0 in default mode and `--next-change`, exit 2 with `--check`, error at `<stdin>:1`) and `tests/test_states.py::test_a_failing_command_is_an_error_only_when_a_line_evaluates_it`.
+* Docs: man page macro section ("`--check` also runs command macros that no line uses"), README `--check` row, `--check` help text.
 
-Acceptance: `make test` green; manual install into a scratch prefix runs.
+Acceptance: `make test` green; the three cases above behave as stated.
+
+### T3 - done
 
 ### T4 — Default config: examples only (SPEC §3.3)
 
@@ -114,7 +106,7 @@ Acceptance: new tests pass; spec wording is unambiguous.
 
 Files: `kairoslib/*.py` (comments only unless a violation is found), new `tests/test_no_handwritten_calendar.py`.
 
-* Search the package for month-length tables, leap-year formulas (`% 4`, `% 400`), manual weekday computations and `monthrange`-like re-implementations. Library calls (`calendar.monthrange`, `relativedelta`, `date.weekday()`) are fine; fixed unit constants (60, 3600, 86400) are fine.
+* Search the package for month-length tables, leap-year formulas (`% 4`, `% 400`), manual weekday computations and `monthrange`-like re-implementations. Library calls (`calendar.monthrange`, `relativedelta`, `date.weekday()`) are fine.
 * Search margins and bounds (`366 * DAY`, `31 * DAY + 3600` in `evaluate.py`, `last + 366 * 86400` in `timezones.py`, `CYCLE_DAYS`, `MAX_T` in `next_change.py`) get a one-line comment saying they are bounds, not calendar arithmetic.
 * The test greps the package source for the forbidden patterns (leap-year formulas, `[31, 28`/`31, 28`-style tables, `% 400`) and fails on a match.
 
@@ -139,27 +131,24 @@ Files: `man/kairos.1`, `README.md`, `kairoslib/cli.py` help texts. Read: SPEC §
 
 Acceptance: every option and rule in SPEC §2 appears in the man page; no statement in man/README contradicts the SPEC.
 
-### A1 — Author tasks (not for an agent)
-
-* Run `kairos` on your own config: the manual acceptance check (sensible output, `--check` exit 0).
-* The brief's own example list is not in the repository: the default config examples were reconstructed from the SPEC vectors. Send missing examples; they go into `kairoslib/defaults.py` and are checked by `tests/test_defaults.py`.
-
 ## 5. Open questions and implementation notes for the author
 
 Open:
 
-* D20 details I chose, please confirm: bare date and bare time take no offset; a bare time exactly 12 hours in the past stays today; the warning text in SPEC §2.3.
-* `--check` runs an unused command macro with the context of its enclosing lines only (SPEC §5.4); the previous implementation note spoke of "lines above its definition".
+* D20 details I chose, please confirm: bare date and bare time take no offset; a bare time exactly 12 hours in the past stays today; the warning text in SPEC §2.3. – author acknowledges
+* `--check` runs an unused command macro with the context of its enclosing lines only (SPEC §5.4); the previous implementation note spoke of "lines above its definition". - author acknowledges
 * V14 on Python 3.9/3.10 and `tzlocal` discovery: T8.
 
 Implementation choices not in the SPEC (promote into the SPEC with a `spec:` commit, or reject):
 
-* A clause's `TIME`, `HOUR` and `MINUTE` items are turned into daily windows and intersected; a wrapping hour range (`22h-2h`) spills into the next day, a wrapping minute range (`50m-10m`) into the next hour.
-* Duration arithmetic for `+`, `until`, `before`, `after` uses the zone of the first anchor term that names a zone, else the default zone.
-* An anchor with no instance start/end (always on, e.g. `00:00-24:00 + 1 day`) has no meaningful result; the look-back is capped at 100 years so evaluation terminates.
-* `--next-change` searches up to `MAX_T`, two days before 9999-12-31 (a margin for zone-offset conversion); changes in the last two days of year 9999 are out of reach.
-* Pruning detail: below an inactive parent, a line that needs an uncached command is only structurally validated and so are its descendants; a value cached earlier is reused anywhere. A string macro expands only names visible where it was defined.
-* The `wrong locale?` hint names the built-in `C`/`POSIX` locales only if no other installed locale knows the word.
+* A clause's `TIME`, `HOUR` and `MINUTE` items are turned into daily windows and intersected - author needs explanation
+* a wrapping hour range (`22h-2h`) spills into the next day, a wrapping minute range (`50m-10m`) into the next hour. - author acknowledges
+* Duration arithmetic for `+`, `until`, `before`, `after` uses the zone of the first anchor term that names a zone, else the default zone. - author acknowledges
+* An anchor with no instance start/end (always on, e.g. `00:00-24:00 + 1 day`) has no meaningful result; the look-back is capped at 100 years so evaluation terminates. - author acknowledges
+* `--next-change` searches up to `MAX_T`, two days before 9999-12-31 (a margin for zone-offset conversion); changes in the last two days of year 9999 are out of reach. - author acknowledges
+* Pruning detail: below an inactive parent, a line that needs an uncached command is only structurally validated and so are its descendants; a value cached earlier is reused anywhere. - author: this needs spec tuning: cache command macro´s output only when all the KAIROS_INTERVAL_* and KAIROS_STATE_* and KAIROS_MACRO_* env vars are the same.
+* A string macro expands only names visible where it was defined. - author: yes, string macros should resolve immediately to a flat string
+* The `wrong locale?` hint names the built-in `C`/`POSIX` locales only if no other installed locale knows the word. - author acknowledges
 
 ## 6. Testing notes
 
@@ -171,17 +160,17 @@ Implementation choices not in the SPEC (promote into the SPEC with a `spec:` com
 
 ## 7. Risks
 
-| Risk | Mitigation |
-|------|-----------|
-| Relative intervals whose anchor starts long before the window | Widen look-back until the first relevant anchor instance is complete; tests with long durations. |
-| Adjacent ranges across midnight or DST must merge, or `--next-change` reports false changes | Merge in `RangeSet`; V13 oracle test. |
-| Zone IDs colliding with macro or month/weekday words | Explicit lexer order and reserved-name rules; no abbreviation table. |
-| Macro text substitution altering zone names | Specified limitation (SPEC §5.2); do not "fix" silently. |
-| `ncal -e` output is locale-dependent | Never rely on it in tests; use the fake `ncal` and the `date -d` wrapper. |
+| Risk                                                                                        | Mitigation                                                                                       |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Relative intervals whose anchor starts long before the window                               | Widen look-back until the first relevant anchor instance is complete; tests with long durations. |
+| Adjacent ranges across midnight or DST must merge, or `--next-change` reports false changes | Merge in `RangeSet`; V13 oracle test.                                                            |
+| Zone IDs colliding with macro or month/weekday words                                        | Explicit lexer order and reserved-name rules; no abbreviation table.                             |
+| Macro text substitution altering zone names                                                 | Specified limitation (SPEC §5.2); do not "fix" silently.                                         |
+| `ncal -e` output is locale-dependent                                                        | Never rely on it in tests; use the fake `ncal` and the `date -d` wrapper.                        |
 
 ## 8. Definition of done
 
 * §4 is empty; `make test` passes from a clean checkout on Python 3.9 and the newest available 3.x.
 * Every vector in SPEC §13 (V1–V18) is covered by a test.
 * `kairos` with no config in a fresh environment creates the default file and exits 0 with no output.
-* No hand-written month-length, leap-year or weekday logic remains in the package (T7 checks this; fixed unit constants such as 86400 are fine).
+* No hand-written month-length, leap-year or weekday logic remains in the package (T7 checks this).

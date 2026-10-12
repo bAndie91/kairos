@@ -8,7 +8,7 @@ test:
 
 
 LIBDIR = $(PREFIX)/lib/kairos
-LIBFILES = kairos $(shell git ls kairoslib/)
+LIBFILES = kairos $(shell git ls-files kairoslib/)
 LIBFILE_TARGETS = $(addprefix $(LIBDIR)/,$(LIBFILES))
 
 install: $(LIBFILE_TARGETS) $(PREFIX)/bin/kairos $(PREFIX)/share/man/man1/kairos.1

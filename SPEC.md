@@ -9,11 +9,10 @@ active states will next change.
 
 ---
 
-## 0. Review guide: decisions I had to make
+## 0. Review guide: decisions agent had to make
 
-Your brief is detailed but leaves some corners open, and one example does not work as written.
-Each item below is a decision I took so the spec could be complete. Please confirm or overrule each.
-author: i stroke through what i don't want (most your decisions i agree with) and put a Review comment to make things more explicite where needed.
+Each item below is a decision agent took so the spec could be complete.
+Author reviewed them and stroke out no-go alternatives, and clarified in Review comment column.
 
 | # | Topic | Decision taken (spec section) | Alternative | Review comment |
 |---|-------|-------------------------------|-------------|----------------|
@@ -33,12 +32,8 @@ author: i stroke through what i don't want (most your decisions i agree with) an
 | D17 | Macro names | NAME is any text before the first `:=` (no `=`, not starting with `!`, at least one letter): spaces and punctuation are allowed (`Mary's birthday`), and a name may start with or contain another macro's name as long as the whole name differs. Longest name wins when expanding; only identical names clash (D8). (§4.1, §5.2, §5.3) | ~~Identifiers only (`[A-Za-z_][A-Za-z0-9_]*`)~~ | confirmed by the author |
 | D18 | Command macro failures | A command macro is not executed when it is defined, so a non-zero exit status is an error when the macro is *evaluated*, never at definition/parse time. In default mode and with `--next-change` that is when a line that is not skipped first uses it, so an unused macro never runs. **`--check` is the exception: it evaluates every command macro, used or not**, so a failing command is reported at its macro line. (§2, §5.1, §5.4, §11, V12) | ~~`--check` never runs an unused macro~~ | author: `--check` runs all command macros |
 | D19 | Unions of relative expressions | `2 days before X, 3 days after Y` and `Apr 1, 2 days before X` are allowed: an INTERVAL is a comma-separated list of *parts*, each a plain term or a whole relative expression (`+`, `until`, `before`, `after`); the result is the union of the parts. The anchor of a relative expression is **one term** (a clause or a span). A comma ends the relative expression even when no whitespace follows it: `2 days before Apr 10,20` and `2 days before Apr 10, 20` both mean Apr 8 and Apr 20. A comma followed by `NUMBER unit` never continues a day/year list. (§6.4, §6.6, §9.2) | ~~A relative expression must be the whole INTERVAL; the anchor is a union of all following terms~~ | confirmed by the author |
-| D20 | `--at` forms | Besides the full `YYYY-MM-DD[ T]HH:MM[:SS][offset]`, `--at` accepts a bare date `YYYY-MM-DD` (that day, 00:00) and a bare time `HH:MM[:SS]` (today, or tomorrow with a warning when today's time passed more than 12 hours ago). (§2.3, V18) | ~~Full form only~~ | author's decision |
+| D20 | `--at` forms | Besides the full `YYYY-MM-DD[ T]HH:MM[:SS][offset]`, `--at` accepts a bare date `YYYY-MM-DD` (that day, 00:00) and a bare time `HH:MM[:SS]` (today, or tomorrow with a warning when today's time passed more than 12 hours ago). (§2.3, V18) | ~~Full form only~~ | |
 
-**Additions beyond your brief** (strike any you do not want): options `--at`, `--tz`, `--format`,
-`--check`, `--print-default-config`, `--version`; env var
-`KAIROS_NOW` for macro commands; bare time-point anchors in relative intervals
-(`08:00 + 2 hours`); KAIROS_compound NUM (`4 days 9 hours`); time-of-day in `--` spans.
 
 ---
 
@@ -131,11 +126,11 @@ Error message format on stderr: `kairos: PATH:LINE: error: MESSAGE` (or `kairos:
 
 | Form | Meaning |
 |------|---------|
-| `YYYY-MM-DD[ T]HH:MM[:SS][offset]` | that instant; `offset` is `Z` or `±HH[[:]MM]` |
+| `YYYY-MM-DD HH:MM[:SS][offset| TZ]` | that instant; `offset` and `TZ` are any form of TZ indicator which is accepted in INTERVAL |
 | `YYYY-MM-DD` | the start of that day, `YYYY-MM-DD 00:00:00` (no offset) |
-| `HH:MM[:SS]` | a time of day (no offset): today's date, or tomorrow's under the rule below |
+| `HH:MM[:SS][offset| TZ]` | a time of day: today's date, or tomorrow's under the rule below |
 
-**Bare time.** "Today" is the current date in the display zone. Let `c` be that date at the given time. If `c` lies **more than 12 hours** in the past, the time is taken on the **next** day instead, and a warning goes to stderr naming both the given time and the date used, e.g. `kairos: warning: --at 06:00 passed 14 hours ago; using tomorrow, 2026-10-10 06:00:00`. Otherwise `c` stays today, whether it is later today or already passed up to 12 hours ago (exactly 12 hours counts as "not more than"). So at 20:00, `--at 06:00` means tomorrow 06:00 (with the warning), while at 15:00, `--at 14:00` stays today (no warning), and `--at 22:00` at 20:00 is today. Of the three forms only the bare time depends on the current time; with `--next-change` the resolved instant is the base like any other `--at`. See V18.
+**Bare time.** "Today" is the current date in the display zone. Let `c` be that date at the given time. If `c` lies **more than 12 hours** in the past, the time is taken on the **next** day instead, and a warning goes to stderr naming both the given time and the date used, e.g. `kairos: warning: --at 06:00 passed 14 hours ago; setting tomorrow, 2026-10-10 06:00:00`. Otherwise `c` stays today, whether it is later today or already passed up to 12 hours ago (exactly 12 hours counts as "not more than"). So at 20:00, `--at 06:00` means tomorrow 06:00 (with the warning), while at 15:00, `--at 14:00` stays today (no warning), and `--at 22:00` at 20:00 is today. Of the three forms only the bare time depends on the current time; with `--next-change` the resolved instant is the base like any other `--at`. See V18.
 
 ---
 
