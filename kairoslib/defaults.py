@@ -73,7 +73,8 @@ DEFAULT_CONFIG = r"""## ========================================================
 ## Several parts in one interval.
 # Apr 1, 2 days before Apr 10 = day and shift
 # Mon + 2 days, Fri = long weekend
-# 2 days before Apr 10,20 = two shifted dates
+## The comma ends the relative expression: this is Apr 8 and every 20th.
+# 2 days before Apr 10,20 = shifted date and every 20th
 ##
 ## String macros, including names with spaces and punctuation.
 # Q1 := Jan-Mar
