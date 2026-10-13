@@ -31,7 +31,7 @@ Author reviewed them and stroke out no-go alternatives, and clarified in Review 
 | D13 | `--next-change` with nothing ahead | No arbitrary horizon; print nothing and exit 0 if no future change exists. (§10) | ~~A fixed horizon and exit 1~~ | Search candidate boundaries, then prove exhaustion using the finite Gregorian recurrence cycle after all finite exceptions and duration tails. Include the future recurrence rules of the active TZif zones; don't scan every second/date to eternity. |
 | D17 | Macro names | NAME is any text before the first `:=` (no `=`, not starting with `!`, at least one letter): spaces and punctuation are allowed (`Mary's birthday`), and a name may start with or contain another macro's name as long as the whole name differs. Longest name wins when expanding; only identical names clash (D8). (§4.1, §5.2, §5.3) | ~~Identifiers only (`[A-Za-z_][A-Za-z0-9_]*`)~~ | confirmed by the author |
 | D18 | Command macro failures | A command macro is not executed when it is defined, so a non-zero exit status is an error when the macro is *evaluated*, never at definition/parse time. In default mode and with `--next-change` that is when a line that is not skipped first uses it, so an unused macro never runs. **`--check` is the exception: it evaluates every command macro, used or not**, so a failing command is reported at its macro line. (§2, §5.1, §5.4, §11, V12) | ~~`--check` never runs an unused macro~~ | author: `--check` runs all command macros |
-| D19 | Unions of relative expressions | `2 days before X, 3 days after Y` and `Apr 1, 2 days before X` are allowed: an INTERVAL is a comma-separated list of *parts*, each a plain term or a whole relative expression (`+`, `until`, `before`, `after`); the result is the union of the parts. The anchor of a relative expression is **one term** (a clause or a span). A comma ends the relative expression even when no whitespace follows it: `2 days before Apr 10,20` and `2 days before Apr 10, 20` both mean Apr 8 plus the 20th of every month (`20` is a separate part, a day of month). A comma followed by `NUMBER unit` never continues a day/year list. (§6.4, §6.6, §9.2) | ~~A relative expression must be the whole INTERVAL; the anchor is a union of all following terms~~ | confirmed by the author |
+| D19 | Unions of relative expressions | `2 days before X, 3 days after Y` and `Apr 1, 2 days before X` are allowed: an INTERVAL is a comma-separated list of *parts*, each a plain term or a whole relative expression (`+`, `until`, `before`, `after`); the result is the union of the parts. The anchor of a relative expression is **one comma-free term** (a clause without a list, or a span), the same for all four operators: a comma ends the relative expression on either side of the operator, so an operator never shifts a term beyond a comma (`Mon,Fri + 2 days` is `Mon` plus `Fri + 2 days`; `2 days before Mon,Fri` is `2 days before Mon` plus `Fri`). A comma ends the relative expression even when no whitespace follows it: `2 days before Apr 10,20` and `2 days before Apr 10, 20` both mean Apr 8 plus the 20th of every month (`20` is a separate part, a day of month). A comma followed by `NUMBER unit` never continues a day/year list. (§6.4, §6.6, §9.2) | ~~A relative expression must be the whole INTERVAL; the anchor is a union of all following terms~~ | confirmed by the author |
 | D20 | `--at` forms | Besides the full `YYYY-MM-DD[ T]HH:MM[:SS][offset]`, `--at` accepts a bare date `YYYY-MM-DD` (that day, 00:00) and a bare time `HH:MM[:SS]` (today, or tomorrow with a warning when today's time passed more than 12 hours ago). (§2.3, V18) | ~~Full form only~~ | |
 
 
@@ -353,6 +353,8 @@ A list may not mix point times and time ranges. The union of all terms is the in
 
 A comma followed by a duration (`NUMBER unit`, e.g. `2 days`) never continues a list: `2` there is the count of a duration, not a day of month. It starts a new *part* of the INTERVAL, a relative expression (§6.6, §9.2): `Apr 1, 2 days before X` is the two parts `Apr 1` and `2 days before X`, never the day list `1,2`. Whitespace before or after a comma is insignificant: `10,20` equals `10, 20`, and `Jun 1,Jul 2` equals `Jun 1, Jul 2`.
 
+Inside a relative expression a comma never continues a list: it always ends the anchor, for `+`, `until`, `before` and `after` alike (§9, §9.2). The list rule above therefore applies only outside the anchors of relative expressions.
+
 ### 6.5 Spans (`--`)
 
 `A -- B` is a *span* between two dates.
@@ -371,10 +373,11 @@ A comma followed by a duration (`NUMBER unit`, e.g. `2 days`) never continues a 
 ```
 interval = part { "," part } ;           (* union of the parts, §9.2; comma grouping per §6.4 *)
 part     = term
-         | term "+" duration              (* §9 *)
-         | duration "until" term
-         | duration "before" term        (* §9.1 *)
-         | duration "after" term ;       (* §9.1 *)
+         | anchor "+" duration            (* §9 *)
+         | duration "until" anchor
+         | duration "before" anchor      (* §9.1 *)
+         | duration "after" anchor ;     (* §9.1 *)
+anchor   = span | clause ;                (* no "," at all: the clause has no list (§9, §9.2) *)
 term     = span | clause ;
 span     = dateside "--" dateside [ TZ ] ;
 dateside = ( ISODATE | [ YEAR ] [ MONTH ] DOM ) [ TIME ] ;
@@ -470,7 +473,7 @@ DURATION until ANCHOR        e.g.  40 days until Dec 24
 ```
 
 * DURATION = one or more `NUMBER unit` pairs (`5 days`, `4 days 9 hours`). Units: second, minute, hour, day, week, month, year (singular or plural, either regardless of the number).
-* An ANCHOR is **one term** (§6.3, §6.5): a clause (with its lists, `Mon,Fri`, `1-7 Mon`) or a span. Terms separated by a comma that does not continue a list are separate parts of the INTERVAL (§9.2), so `Apr 10, Apr 20 + 2 days` is `Apr 10` plus `Apr 20 + 2 days`. Its **instances** are the maximal contiguous ranges of the anchor's set (a point time is an instance of length zero).
+* An ANCHOR is **one comma-free term** (§6.3, §6.5): a clause without a list (`Mon`, `1-7 Mon`, `Mon-Fri 08:00-12:00`; ranges are fine, lists are not) or a span. This is the same for all four operators (`+`, `until`, `before`, `after`): a comma always ends a relative expression, on either side of its operator, whether or not it would continue a list elsewhere (§6.4, §9.2), so a relative operator never shifts a term beyond a comma. `Apr 10, Apr 20 + 2 days` is `Apr 10` plus `Apr 20 + 2 days`; `Mon,Fri + 2 days` is `Mon` plus `Fri + 2 days`. Its **instances** are the maximal contiguous ranges of the anchor's set (a point time is an instance of length zero).
 * `ANCHOR + D`: for every instance starting at `s`, the result is `[s, s + D)`. The anchor's own length is ignored. (`1-7 Mon + 5 day` = Mon 00:00 → Sat 00:00 → the working week starting on the first Monday.)
 * `D until ANCHOR`: for every instance ending at `e` the result is `[e − D, e)` (D6).
 * Arithmetic is done in the anchor's zone: day/week/month/year units are calendar (wall-clock) arithmetic (`dateutil.relativedelta`); hour/minute/second units are elapsed time (convert to UTC, add, convert back).
@@ -500,11 +503,13 @@ Relative expressions are ordinary parts of an INTERVAL (D19). A comma-separated 
 2 days before Apr 10, 3 days after Oct 1      Apr 8 and Oct 4
 Apr 1, 2 days before Apr 10                   Apr 1 and Apr 8
 Mon + 2 days, Fri                             Mon-Tue and Fri
+Mon,Fri + 2 days                              Mon, and Fri-Sat (not Mon-Tue)
+2 days before Mon,Fri                         Sat, and Fri
 ```
 
 * A comma between terms always starts a new part, unless it continues a list inside a clause (§6.4); a comma followed by `NUMBER unit` never continues a list (§6.4). Otherwise
 * Each part is evaluated on its own, with its own anchor, zone choice (§9) and arithmetic; the INTERVAL is their union. A `TZ` applies to the term it ends, as always, and never spills over to another part.
-* The anchor of every relative form is a single term (§9) and a relative operator never reaches beyond its own term, in either direction (`+` does not shift the terms before it, `until`/`before`/`after` do not shift the terms after it), so a comma ends the relative expression regardless of whitespace: `2 days before Apr 10,Apr 20` and `2 days before Apr 10, Apr 20` are the two parts `2 days before Apr 10` and `Apr 20`, i.e. Apr 8 and Apr 20. Without the second month name, `2 days before Apr 10,20` is the two parts `2 days before Apr 10` and `20`, i.e. Apr 8 plus the 20th of every month. Likewise `Apr 10,Apr 20 + 2 days` is `Apr 10` and `Apr 20 + 2 days`. To shift several dates, repeat the form (`2 days before Apr 10, 2 days before Apr 20`); commas within an ordinary clause still form lists (`Mon,Fri + 1 day`).
+* The anchor of every relative form is a single comma-free term (§9) and a relative operator never reaches beyond its own term, in either direction and alike for `+`, `until`, `before` and `after` (`+` does not shift the terms before its anchor, `until`/`before`/`after` do not shift the terms after it), so a comma ends the relative expression regardless of whitespace and regardless of whether it would continue a list elsewhere: `2 days before Apr 10,Apr 20` and `2 days before Apr 10, Apr 20` are the two parts `2 days before Apr 10` and `Apr 20`, i.e. Apr 8 and Apr 20. Without the second month name, `2 days before Apr 10,20` is the two parts `2 days before Apr 10` and `20`, i.e. Apr 8 plus the 20th of every month. Likewise `Apr 10,Apr 20 + 2 days` is `Apr 10` and `Apr 20 + 2 days`, `Mon,Fri + 2 days` is `Mon` and `Fri + 2 days`, and `2 days before Mon,Fri` is `2 days before Mon` and `Fri`. For `+` the anchor starts right after the last comma before the operator (`Apr,Jun 1,15 + 2 days` is `Apr,Jun 1` and `15 + 2 days`). To shift several terms, repeat the form (`2 days before Apr 10, 2 days before Apr 20`); outside relative expressions commas still form lists (`Mon,Fri 08:00-09:00`).
 * The result is an ordinary set, like any other INTERVAL.
 
 ---
@@ -662,9 +667,11 @@ Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 an
 Apr 1, 2 days before Apr 10 = day and shift
 Mon + 2 days, Fri = week
 2 days before Apr 10, Apr 20 = separate parts
+Mon,Fri + 2 days = list then shift
+2 days before Mon,Fri = shift then list
 Apr 1, 2 days = oops
 ```
-`two shifts` is exactly Apr 8 and Oct 4 (active 2026-04-08 00:00:00, inactive 2026-04-09 00:00:00 and 2026-04-10 12:00); `day and shift` is exactly Apr 1 and Apr 8 (never the days 1 and 2); `week` is every Monday and Tuesday (`[Mon 00:00, Wed 00:00)`) plus every Friday; `separate parts` is exactly Apr 8 and Apr 20 (the shift applies to `Apr 10` only); `2 days before Apr 10,20` (like `2 days before Apr 10, 20`) is Apr 8 plus the 20th of every month, because the comma ends the relative expression regardless of whitespace and `20` is then a separate part, a day of month; the last line is an error (`2 days` without `until`, `before` or `after`). A trailing comma (`Apr 1,`, `Apr 1, 2 days before Apr 10,`) is an error. With a union INTERVAL `--next-change` still finds the first change of any part (`two shifts` at 2026-01-01 00:00 is `2026-04-08 00:00:00`).
+`two shifts` is exactly Apr 8 and Oct 4 (active 2026-04-08 00:00:00, inactive 2026-04-09 00:00:00 and 2026-04-10 12:00); `day and shift` is exactly Apr 1 and Apr 8 (never the days 1 and 2); `week` is every Monday and Tuesday (`[Mon 00:00, Wed 00:00)`) plus every Friday; `separate parts` is exactly Apr 8 and Apr 20 (the shift applies to `Apr 10` only); `list then shift` is every Monday (one day, not shifted) plus `[Fri 00:00, Sun 00:00)` every week, and `shift then list` is every Saturday (`Mon` moved back two days) plus every Friday: the comma ends the anchor for `+` just as for `before`; `2 days before Apr 10,20` (like `2 days before Apr 10, 20`) is Apr 8 plus the 20th of every month, because the comma ends the relative expression regardless of whitespace and `20` is then a separate part, a day of month; the last line is an error (`2 days` without `until`, `before` or `after`). A trailing comma (`Apr 1,`, `Apr 1, 2 days before Apr 10,`) is an error. With a union INTERVAL `--next-change` still finds the first change of any part (`two shifts` at 2026-01-01 00:00 is `2026-04-08 00:00:00`).
 
 **V15** locale-sensitive month and weekday names (run in subprocesses with environment variables set before Python starts; skip if the requested locale is not installed):
 
