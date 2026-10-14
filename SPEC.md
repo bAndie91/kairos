@@ -32,7 +32,7 @@ Author reviewed them and stroke out no-go alternatives, and clarified in Review 
 | D17 | Macro names | NAME is any text before the first `:=` (no `=`, not starting with `!`, at least one letter): spaces and punctuation are allowed (`Mary's birthday`), and a name may start with or contain another macro's name as long as the whole name differs. Longest name wins when expanding; only identical names clash (D8). (§4.1, §5.2, §5.3) | ~~Identifiers only (`[A-Za-z_][A-Za-z0-9_]*`)~~ | confirmed by the author |
 | D18 | Command macro failures | A command macro is not executed when it is defined, so a non-zero exit status is an error when the macro is *evaluated*, never at definition/parse time. In default mode and with `--next-change` that is when a line that is not skipped first uses it, so an unused macro never runs. **`--check` is the exception: it evaluates every command macro, used or not**, so a failing command is reported at its macro line. (§2, §5.1, §5.4, §11, V12) | ~~`--check` never runs an unused macro~~ | author: `--check` runs all command macros |
 | D19 | Unions of relative expressions | `2 days before X, 3 days after Y` and `Apr 1, 2 days before X` are allowed: an INTERVAL is a comma-separated list of *parts*, each a plain term or a whole relative expression (`+`, `until`, `before`, `after`); the result is the union of the parts. The anchor of a relative expression is **one comma-free term** (a clause without a list, or a span), the same for all four operators: a comma ends the relative expression on either side of the operator, so an operator never shifts a term beyond a comma (`Mon,Fri + 2 days` is `Mon` plus `Fri + 2 days`; `2 days before Mon,Fri` is `2 days before Mon` plus `Fri`). A comma ends the relative expression even when no whitespace follows it: `2 days before Apr 10,20` and `2 days before Apr 10, 20` both mean Apr 8 plus the 20th of every month (`20` is a separate part, a day of month). A comma followed by `NUMBER unit` never continues a day/year list. (§6.4, §6.6, §9.2) | ~~A relative expression must be the whole INTERVAL; the anchor is a union of all following terms~~ | confirmed by the author |
-| D20 | `--at` forms | Besides the full `YYYY-MM-DD[ T]HH:MM[:SS][offset]`, `--at` accepts a bare date `YYYY-MM-DD` (that day, 00:00) and a bare time `HH:MM[:SS]` (today, or tomorrow with a warning when today's time passed more than 12 hours ago). (§2.3, V18) | ~~Full form only~~ | |
+| D20 | `--at` forms | `--at` takes the same time zone tokens as an INTERVAL (§8.1): `YYYY-MM-DD H:MM[:SS] [TZ]`, a bare date `YYYY-MM-DD [TZ]` (that day, 00:00) and a bare time `H:MM[:SS] [TZ]` (today, or tomorrow with a warning when today's time passed more than 12 hours ago). Date and time are separated by whitespace; there is no `T` separator. (§2.3, V18) | ~~Full form only~~; ~~ISO `[ T]` separator and a bare numeric offset~~ | author: TZ names and offsets just like INTERVAL; `T` is not needed |
 
 
 ---
@@ -96,7 +96,7 @@ kairos [OPTIONS]
 | Option | Meaning |
 |--------|---------|
 | `-c FILE`, `--config FILE` | Use FILE instead of the XDG lookup. `-` reads the config from stdin. |
-| `--at DATETIME` | Evaluate at DATETIME instead of now: `YYYY-MM-DD[ T]HH:MM[:SS][offset]`, a bare date `YYYY-MM-DD`, or a bare time `HH:MM[:SS]` (§2.3). Without an offset it is interpreted in the display zone. Sub-seconds are truncated. |
+| `--at DATETIME` | Evaluate at DATETIME instead of now: `YYYY-MM-DD H:MM[:SS] [TZ]`, a date `YYYY-MM-DD [TZ]`, or a time `H:MM[:SS] [TZ]` (§2.3). `TZ` is any zone form of §8.1, as in an INTERVAL; without it the display zone is used. |
 | `-n`, `--next-change` | Print the next instant (after "now" or after DATETIME if `--at` is specified) at which the set of reported states changes, instead of the states. |
 | `--tz ZONE` | Default time zone (IANA name, or any form from §8.1). Used for intervals without an explicit zone and for printing. Default: `$TZ`, else the system zone. |
 | `--format FMT` | Output format of `--next-change`. A `strftime` string, or the keywords `iso` (ISO 8601 with offset) or `epoch` (Unix seconds). Default `%Y-%m-%d %H:%M:%S`. |
@@ -122,15 +122,15 @@ Error message format on stderr: `kairos: PATH:LINE: error: MESSAGE` (or `kairos:
 
 ### 2.3 `--at` forms
 
-`--at` takes one of three forms. A form without an offset is local time in the display zone; a nonexistent or ambiguous local time follows §7.1 (PEP 495). Sub-seconds are truncated.
+`--at` takes one of three forms. The optional `TZ` is one zone token of §8.1 (an IANA zone ID, `UTC`, `Z`, `UTC+2`, `UTC+0300`, …), exactly as in an INTERVAL; whitespace between the time (or date) and the `TZ` is optional (`12:00Z`, `12:00 Z`). A form without `TZ` is local time in the display zone; with a `TZ` it is local time in that zone. A nonexistent or ambiguous local time follows §7.1 (PEP 495). Date and time are separated by whitespace only (there is no `T` separator). Sub-seconds are truncated.
 
 | Form | Meaning |
 |------|---------|
-| `YYYY-MM-DD HH:MM[:SS][offset| TZ]` | that instant; `offset` and `TZ` are any form of TZ indicator which is accepted in INTERVAL |
-| `YYYY-MM-DD` | the start of that day, `YYYY-MM-DD 00:00:00` (no offset) |
-| `HH:MM[:SS][offset| TZ]` | a time of day: today's date, or tomorrow's under the rule below |
+| `YYYY-MM-DD H:MM[:SS] [TZ]` | that instant |
+| `YYYY-MM-DD [TZ]` | the start of that day, `YYYY-MM-DD 00:00:00` |
+| `H:MM[:SS] [TZ]` | a time of day: today's date, or tomorrow's under the rule below |
 
-**Bare time.** "Today" is the current date in the display zone. Let `c` be that date at the given time. If `c` lies **more than 12 hours** in the past, the time is taken on the **next** day instead, and a warning goes to stderr naming both the given time and the date used, e.g. `kairos: warning: --at 06:00 passed 14 hours ago; setting tomorrow, 2026-10-10 06:00:00`. Otherwise `c` stays today, whether it is later today or already passed up to 12 hours ago (exactly 12 hours counts as "not more than"). So at 20:00, `--at 06:00` means tomorrow 06:00 (with the warning), while at 15:00, `--at 14:00` stays today (no warning), and `--at 22:00` at 20:00 is today. Of the three forms only the bare time depends on the current time; with `--next-change` the resolved instant is the base like any other `--at`. See V18.
+**Bare time.** "Today" is the current date in the zone of the form (the `TZ` if given, else the display zone). Let `c` be that date at the given time. If `c` lies **more than 12 hours** in the past, the time is taken on the **next** day instead, and a warning goes to stderr naming both the given time and the date used, e.g. `kairos: warning: --at 06:00 passed 14 hours ago; setting tomorrow, 2026-10-10 06:00:00`. Otherwise `c` stays today, whether it is later today or already passed up to 12 hours ago (exactly 12 hours counts as "not more than"). So at 20:00, `--at 06:00` means tomorrow 06:00 (with the warning), while at 15:00, `--at 14:00` stays today (no warning), and `--at 22:00` at 20:00 is today. Of the three forms only the bare time depends on the current time; with `--next-change` the resolved instant is the base like any other `--at`. See V18.
 
 ---
 
@@ -683,12 +683,14 @@ Apr 1, 2 days = oops
 - Locale setup occurs before lexing. Verify locale-aware matching is case-insensitive only to the extent provided by the chosen date/time facilities, and that non-ASCII characters such as `á` survive tokenization and matching.
 - Run a subprocess per locale so Python's process-global locale state cannot leak between tests. Never require an unavailable locale to be installed; report a skip for that locale.
 
-**V18** `--at` bare forms (`tz=Europe/Budapest`; the current time is a parameter of the resolving function, so tests never read the wall clock). Config `06:00-07:00 = x`:
-- `--at 2026-10-09` is `2026-10-09 00:00:00`: `x` is not active; `--at 2026-10-09` with `00:00-01:00 = y` shows `y`.
-- Now = `2026-10-09 20:00:00`: `--at 06:00` → `2026-10-10 06:00:00` (`x`, plus the stderr warning naming `06:00` and `2026-10-10`); `--at 08:00:01` → today `2026-10-09 08:00:01`, no warning (11 h 59 m 59 s ago); `--at 08:00` → today (exactly 12 hours ago is not "more than"), no warning; `--at 07:59:59` → tomorrow, with the warning; `--at 22:00` → today (later today), no warning.
+**V18** `--at` forms (`tz=Europe/Budapest`; the current time is a parameter of the resolving function, so tests never read the wall clock). Config `06:00-07:00 = x`:
+- `--at 2026-10-09` is `2026-10-09 00:00:00`: `x` is not active; `--at 2026-10-09` with `00:00-01:00 = y` shows `y`. `--at 2026-10-09Z` is `2026-10-09 00:00:00` UTC, i.e. `02:00:00` in Budapest, so `y` is not active but `00:00-03:00 = z` shows `z`.
+- A `TZ` is read as in an INTERVAL: `--at "2026-10-09 12:00 Europe/Berlin"` and `--at "2026-10-09 12:00:00UTC+2"` are both the instant `2026-10-09 10:00:00 UTC`; `--at "2026-10-09 12:00Z"` is `12:00:00 UTC`. `8:05` is the same as `08:05`.
+- Now = `2026-10-09 20:00:00` (= `18:00:00 UTC`): `--at 06:00` → `2026-10-10 06:00:00` (`x`, plus the stderr warning naming `06:00` and `2026-10-10`); `--at 08:00:01` → today `2026-10-09 08:00:01`, no warning (11 h 59 m 59 s ago); `--at 08:00` → today (exactly 12 hours ago is not "more than"), no warning; `--at 07:59:59` → tomorrow, with the warning; `--at 22:00` → today (later today), no warning.
+- Bare time with a `TZ` counts today and the 12 hours in that zone (now = `2026-10-09 20:00:00` Budapest = `18:00:00 UTC`): `--at 05:00Z` is 13 hours in the past in UTC → `2026-10-10 05:00:00 UTC` with the warning; `--at 06:00Z` is exactly 12 hours → `2026-10-09 06:00:00 UTC`, no warning.
 - Now = `2026-10-09 15:00:00`: `--at 14:00` → `2026-10-09 14:00:00`, no warning.
 - Now = `2026-10-09 01:06:00`: `--at 23:00` → today `2026-10-09 23:00:00` (still ahead), no warning.
-- Bare time with an offset (`06:00Z`) and a bare date with an offset (`2026-10-09Z`) are errors; so are `24:00`, `6:00x` and `HH:MM` out of range. With `--next-change`, `--at 06:00` (now 20:00 as above) searches from `2026-10-10 06:00:00`.
+- Errors: `24:00`, `25:00`, `6:60`, `6:00x` (unknown zone token), `2026-10-09 06:00 Foo/Bar` (unknown zone), `2026-10-09T06:00` and abbreviations such as `CEST` (§8.1). With `--next-change`, `--at 06:00` (now 20:00 as above) searches from `2026-10-10 06:00:00`.
 
 ---
 
