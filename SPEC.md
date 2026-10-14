@@ -18,7 +18,7 @@ The author reviewed them, struck out the rejected alternatives and clarified in 
 |---|-------|-------------------------------|-------------|----------------|
 | D1 | `*-*-01` with child `Fri` | Plain intersection: "the 1st of the month **when it is a Friday**". "First Friday of the month" is `1-7 Fri`. The phrase "1st Friday of every month" does not match intersection semantics. (§7.2) | ~~Add a dedicated "n-th weekday" syntax~~ |
 | D2 | Rollover time range plus day selector on **one line** (`Fri 22:00-02:00`) | Day selectors pick the *starting* day; the range may spill into the next day (Fri 22:00 → Sat 02:00). When the same pieces are on **nested lines** (`Fri` / `  22:00-02:00`) the result is a pure set intersection (Fri 00:00–02:00 ∪ Fri 22:00–24:00). (§7.1) | ~~Always pure intersection~~ |
-| D3 | Commas | A comma continues the current list only if the next item is of the **same kind** as the item before the comma; otherwise it separates terms. So `Mon-Fri 08:00-12:00,13:00-17:00` is a cross product, and `Apr 1, Jun 15` is two days. (§6.4) | ~~Comma always separates terms~~ |
+| D3 | Commas | A comma continues the current list only if the next item is of the **same kind** as the item before the comma; otherwise it separates terms. So `Mon-Fri 08:00-12:00,13:00-17:00` is a cross product, and `Apr 1, Jun 15` is two days. A span side is never a list, so commas next to a span always separate terms (D22). (§6.4) | ~~Comma always separates terms~~ |
 | D4 | Command macros (`NAME := ! cmd`) vs. "intervals not covering the current time are skipped" | Commands run **eagerly**, in file order, when the macro definition line is reached in the single parse pass (never lazily on first use). In the default mode, subtrees under a parent that is **not active at the evaluation time** are skipped (their commands do not run). `--next-change` and `--check` never skip. The command's environment carries `KAIROS_INTERVAL_*` / `KAIROS_STATE_*` of the definition line's **ancestors** only, and `KAIROS_MACRO_*` of the macros visible at that line. (§5.1, §5.4) | ~~Lazy evaluation (run a command when its macro is first used)~~ | author: no lazy evaluation; evaluate eagerly |
 | D5 | `Easter := ! ncal -e` | `ncal -e` prints a **locale-dependent, US-style** date (e.g. `04/05/26` in a US locale), which the INTERVAL grammar (ISO dates only) rejects. The example parses as a macro definition but would fail on use. Use a wrapper such as `! date -d "$(ncal -e)" +%F`. Also: a command's output is a snapshot, so a recurring date computed by a command is only valid for the year it was computed in (§5.5). | ~~Accept `MM/DD/YY` (rejected: locale-dependent, ambiguous)~~ | ignore what you `ncal` outputs. keep that `date` command in the examples. no introduce mm/dd/yy format. |
 | D6 | `40 days until Dec 24` | End is the **end of the whole anchor instance** (so Dec 24 itself is included, mirroring `--` whose end date is inclusive). Range = Nov 15 00:00 → Dec 25 00:00. (§9) | ~~End at the *start* of Dec 24~~ | "until Dec 24" means "up to and including Dec 24" |
@@ -33,6 +33,11 @@ The author reviewed them, struck out the rejected alternatives and clarified in 
 | D18 | Command macro failures | A command macro runs when it is defined (D4), so a non-zero exit status is an error reported at the macro's line whether or not any line uses the macro, in every mode. The only exception is a command inside a subtree skipped in default mode: it does not run and cannot fail. (§2, §5.1, §5.4, §11, V12) | ~~Evaluation-time errors: an unused macro never runs; `--check` runs all macros~~ | author: eager evaluation |
 | D19 | Unions of relative expressions | `2 days before X, 3 days after Y` and `Apr 1, 2 days before X` are allowed: an INTERVAL is a comma-separated list of *parts*, each a plain term or a whole relative expression (`+`, `until`, `before`, `after`); the result is the union of the parts. The anchor of a relative expression is **one term** (a clause or a span). A comma ends the relative expression even when no whitespace follows it: `2 days before Apr 10,20` and `2 days before Apr 10, 20` both mean Apr 8 and Apr 20. A comma followed by `NUMBER unit` never continues a day/year list. (§6.4, §6.6, §9.2) | ~~A relative expression must be the whole INTERVAL; the anchor is a union of all following terms~~ | confirmed by the author |
 | D20 | `--at` forms | `--at` takes the same time zone tokens as an INTERVAL (§8.1): `YYYY-MM-DD H:MM[:SS] [TZ]`, a bare date `YYYY-MM-DD [TZ]` (that day, 00:00) and a bare time `H:MM[:SS] [TZ]` (today, or tomorrow with a warning when today's time passed more than 12 hours ago). Date and time are separated by whitespace; there is no `T` separator. (§2.3, V18) | ~~Full form only~~; ~~ISO `[ T]` separator and a bare numeric offset~~ | author: TZ names and offsets just like INTERVAL; `T` is not an allowed separator |
+| D21 | Tabs and spaces in indentation | Indentation is compared the way Python 3 compares it: every line gets a *column* (tab stops of 8) and an *alt-column* (a tab counts 1), and a line is deeper than, level with or shallower than an open level only if both measures agree; otherwise it is an error, like Python's `TabError`. Tabs and spaces may be mixed within one line and across lines whenever the two measures agree. (§4.2, §4.3, V19) | ~~Reject every line that mixes tabs and spaces~~; ~~expand tabs to 8 columns and compare only that~~ | author: follow Python's rules, also across lines |
+| D22 | Commas next to spans | A span side is never a list, so a comma directly after a span, or directly before a span, ends the term instead of continuing a list: `1 -- 5, 10 -- 12` is two spans and `1 -- 5, 10` is a span and a day. (§6.4, §6.5, V20) | ~~Apply the same-kind list rule (D3) to span sides, which reads `5, 10` as the right side of the first span (an error)~~ | author: a span cannot end on 5 and on 10, nor start on 5 and on 10 |
+| D23 | Time-zone words as macro names | A macro name that is *entirely* a TZ token is reserved, case-insensitively. "TZ token" is whatever the `timezones` module resolves as a `TZ` (§8.1): IANA zone IDs of the installed TZDB (`Europe/Budapest`, and legacy IDs such as `CET`, `EST`, `PST8PDT`), `UTC`, `GMT`, `Z` and numeric offsets (`UTC+2`, `GMT-0330`). Macro-name validation asks that module and keeps no list of its own. Reading taken for "abbreviations": alphabetic abbreviations that are not IANA zone IDs (`CEST`, `CST`, `IST`) are not TZ tokens (D9), so they are **not** reserved. (§5.3, V21) | Also reserve such abbreviations (this needs an abbreviation table, which D9 rules out) | author: no TZ names/abbreviations as macro names; ask the timezone module what is reserved |
+| D24 | `/` in macro expansion | `/` counts like a word character in the whole-word test: a name that starts (ends) with a word character is not replaced when a word character or `/` comes right before (after) it. A macro `Budapest` leaves `Europe/Budapest` alone, and so does a macro `Europe`. (§5.2, V21) | ~~`/` is a word boundary~~ | author: `/` is not a word boundary, so zone IDs cannot be broken by a macro |
+| D25 | Hour and minute ranges | `HOUR` ranges (`15h-16h`, `8:*-12:*`) and ranges with an `Nm`/`Nmin` end (`15m-20m`) are errors, because they are ambiguous (is `15h-16h` one hour or two?). Write `15:00-16:00`, and `*:15-*:20` for minutes: both are left-closed, right-open ranges as usual (`*:15-*:20` is 15 up to, not including, 20 past every hour, and wraps past the hour). Atoms and lists of atoms (`8h`, `30m`, `8h,10h`) stay valid. (§6.1–§6.3, §7.1, V22) | ~~Keep inclusive hour and minute ranges~~ | author: ambiguous; use `15:00-16:00` and `*:15-*:20` |
 
 
 ---
@@ -65,7 +70,7 @@ kairoslib/
   reader.py             logical lines, indentation tree, STATE processing
   macros.py             macro scope, expansion and command execution
   names.py              locale-aware month/weekday names (LC_TIME), reserved-word check, wrong-locale hint
-  timezones.py          zone resolution using IANA TZDB / zoneinfo
+  timezones.py          zone resolution using IANA TZDB / zoneinfo; says what is a TZ token (also for macro-name reserved words, §5.3)
   lexer.py              INTERVAL tokenization
   parser.py             INTERVAL grammar and AST dataclasses
   ranges.py             RangeSet algebra and half-open interval primitives
@@ -177,7 +182,7 @@ The file is UTF-8 text; with LF line endings.
 INDENT [!] INTERVAL [= STATE]
 ```
 
-* `INDENT`: spaces or tabs. mixed indentation → parse error. inconsistent indentation → parse error (like python). first line must have indentation 0.
+* `INDENT`: spaces and tabs, compared the way Python 3 does (§4.3, D21). Mixing them, within a line or across lines, is fine as long as the comparison does not depend on the tab width; otherwise it is a parse error. The first line must have indentation 0.
 * `!` (optionally followed by whitespace) negates the interval (§7.3).
 * The line is split at the **first** `=`. INTERVAL never contains `=`. Both parts are trimmed.
 * No `=` → the line has no STATE: it is **not reported**, but its INTERVAL still restricts its children.
@@ -187,8 +192,42 @@ INDENT [!] INTERVAL [= STATE]
 
 Python-style: a line indented deeper than the previous (non-blank, non-comment) line becomes its child;
 dedenting must return to an indentation level that is currently open, otherwise error.
-The first line must have indentation 0. Any consistent number of spaces per level is fine.
-Macro lines take part in indentation (§5.3) but cannot have children.
+The first line must have indentation 0. Any consistent amount of indentation per level is fine.
+Macro lines take part in indentation (§5.3) but cannot have children. Blank and comment lines are not measured at all, whatever whitespace they start with.
+
+**Tabs and spaces (D21).** The indentation of a line is the run of spaces and tabs before its first other character. As in Python 3's tokenizer it is measured twice:
+
+| Measure | Space | Tab |
+|---------|-------|-----|
+| column | +1 | advances to the next multiple of 8 |
+| alt-column | +1 | +1 |
+
+Each line is compared with the innermost open indentation level, by column and by alt-column separately. Every open level remembers both numbers of the line that opened it.
+
+* column and alt-column both greater → the line is a child and opens a new level;
+* both equal → the line is a sibling;
+* column smaller → close levels until the column equals an open level's; if no open level has that column → error (`unindent does not match any outer indentation level`); the alt-column must then equal that level's alt-column too;
+* any other combination, i.e. the two measures disagree about deeper / equal / shallower → error (`inconsistent use of tabs and spaces in indentation`).
+
+So tabs and spaces may be mixed inside one line's indentation (`····→`, a tab after four spaces) and between lines wherever the result is the same for every tab width. In the examples `→` is a tab and `·` a space:
+
+```
+Mon = a
+→08:00-09:00 = b             child of the first line: column 8 / alt-column 1, deeper by both
+→····09:00-10:00 = c         child of the line above: column 12 / alt-column 5
+```
+
+```
+Mon = a
+→08:00-09:00 = b
+········09:00-10:00 = c      error: eight spaces equal the tab by column, but not by alt-column
+```
+
+```
+Mon = a
+····08:00-09:00 = b
+→09:00-10:00 = c             error: the tab is deeper by column (8 > 4) but not by alt-column (1 < 4)
+```
 
 ### 4.4 STATE text
 
@@ -232,14 +271,15 @@ Before an INTERVAL (or macro STRING) is lexed, every occurrence of a visible mac
 
 * A name is matched literally and case-sensitively, including the inner spaces and punctuation exactly as written in its definition.
 * If several visible names match at the same position, the **longest** wins. So `Mary` and `Mary's birthday` can coexist, and `Mary's birthday` is not read as `Mary` followed by `'s birthday`.
-* Whole word: when the name starts with a *word character* (a letter, including unicode letters, a digit or `_`), the character before the match must not be a word character; when it ends with one, the character after the match must not be one. So `mary` is not replaced inside `annamary` or `mary_birthday`. Whitespace, punctuation, `-`, `,`, `/` and the start/end of the string are boundaries; a name that starts or ends with punctuation needs no boundary on that side.
+* Whole word: when the name starts with a *word character* (a letter, including unicode letters, a digit or `_`), the character before the match must be neither a word character nor `/`; when it ends with one, the character after the match must be neither a word character nor `/` (D24). So `mary` is not replaced inside `annamary` or `mary_birthday`, and a macro `Budapest` (or `Europe`) does not break the zone ID `Europe/Budapest`. Whitespace, punctuation other than `/` (including `-` and `,`) and the start/end of the string are boundaries; a name that starts or ends with punctuation needs no boundary on that side.
 * Expansion is a **single pass**: replaced text is not rescanned. (Values are already fully expanded when defined: a string macro that uses a command macro sees the command's output, since the command has already run, §5.4.)
 
 ### 5.3 Names and scope
 
 * NAME is the text before the first `:=`, trimmed. It is case sensitive and may contain spaces and punctuation (`Mary's birthday`, `Q1 (first quarter)`, `Easter!`). It must not be empty, must not contain `=` (the line would be an interval line, §4.1), must not start with `!`, and must contain at least one letter (a name made only of digits and punctuation would collide with numbers, times and `*`; `7 := x` is an error) (D17).
 * A name may start with, end with or contain the name of another macro, as long as the whole name is different: `Mary`, `Mary's birthday` and `birthday` can all be defined together. Only an identical name is a redefinition (D8). Expansion tries longer names first (§5.2).
-* Reserved (case-insensitive) → error: a name that is *entirely* one of the following words (`Mon morning` is fine, `Mon` is not): month names and weekday names recognized in the effective `LC_TIME` locale (full and abbreviated forms supplied by the locale/date-time library), duration units (§9), `until`, `before`, `after`, `UTC`, `GMT`, and `Z`. The month/weekday vocabulary is locale-dependent and must be derived from the same locale-aware date/time facilities used to parse these names; do not hard-code English names or maintain a separate alias list. Other timezone-looking strings are TZ tokens only if they match §8.1; there is no abbreviation table.
+* Reserved (case-insensitive) → error: a name that is *entirely* one of the following words (`Mon morning` is fine, `Mon` is not): month names and weekday names recognized in the effective `LC_TIME` locale (full and abbreviated forms supplied by the locale/date-time library), duration units (§9), `until`, `before`, `after`, and every **time-zone token** (D23). The month/weekday vocabulary is locale-dependent and must be derived from the same locale-aware date/time facilities used to parse these names; do not hard-code English names or maintain a separate alias list.
+* Time-zone tokens are exactly the strings the `timezones` module resolves as a `TZ` (§8.1, `resolve_tz`): the IANA zone IDs of the installed TZDB (`zoneinfo.available_timezones()`), matched case-insensitively (`Europe/Budapest`, `europe/budapest`, and legacy IDs such as `CET`, `EST`, `PST8PDT`), `UTC`, `GMT`, `Z`, and the numeric offsets (`UTC+2`, `GMT-0330`). Macro-name validation asks the `timezones` module and keeps no zone list of its own, so the reserved set cannot drift from the `TZ` grammar; like the zone list, it depends on the installed TZDB. Alphabetic abbreviations that are not IANA zone IDs (`CEST`, `CST`, `IST`) are not TZ tokens (§8.1, there is no abbreviation table) and are therefore not reserved. A name that only contains a TZ token or part of one (`Europe/Budapest time`, `Budapest`) is fine.
 * A macro defined at indentation 0 is visible to all following lines. A macro defined at deeper indentation, as a child of
   line P, is visible to the lines that follow it inside P's subtree. Leaving the subtree ends the scope.
 * Redefining a name that is **visible** at that point (same scope or enclosing scope) → error (D8). Two sibling subtrees may define the same name.
@@ -286,7 +326,7 @@ After macro expansion the text is tokenised, whitespace being insignificant exce
 |-------|------|
 | `ISODATE` | `Y-m-D`, `Y` = 4 digits or `*`, `m` and `D` = 1–2 digits or `*`; no inner whitespace |
 | `TIME` | `H:MM[:SS]`: hour `H` = 1–2 digits, `MM` and `SS` = 2 digits (`8:00` = `08:00`); the same form is used for `--at` (§2.3) |
-| `HOUR`, `MINUTE` | `HOUR`: digits immediately followed by `h` (`8h`), or digits, `:` and `*` (`8:*`) — the two spellings are the same token kind and mean the same, every minute of hour 8; `MINUTE`: digits immediately followed by `m` / `min` (`30m`, `30min` = minute 30 of every hour, `*:30`); no whitespace inside a token |
+| `HOUR`, `MINUTE` | `HOUR`: digits immediately followed by `h` (`8h`), or digits, `:` and `*` (`8:*`) — the two spellings are the same token kind and mean the same, every minute of hour 8; `MINUTE`: digits immediately followed by `m` / `min` (`30m`, `30min`), or `*`, `:` and two digits (`*:30`) — again the same token kind and the same meaning, minute 30 of every hour; no whitespace inside a token. Only the `*:MM` spelling of `MINUTE` can be a range end (§6.2) |
 | `NUMBER` | digits |
 | `--` `-` `+` `,` `*` | punctuation (`--` is a span operator, `-` a range operator) |
 | `TZ` | IANA zone IDs, numeric UTC offsets, and explicit UTC/GMT/Z forms of §8.1 |
@@ -309,12 +349,14 @@ Unknown word → error (`unknown word 'X' (undefined macro?)`).
 | `DOM` | integer 1–31 (leading zero ok) | wraps (`28-3` = 28…31, 1…3) |
 | `WEEKDAY` | a full or abbreviated weekday name recognized by the effective `LC_TIME` locale's date/time facilities | wraps from the locale's last weekday to its first weekday |
 | `TIME` | `H:MM[:SS]`, H = 0–23 with or without a leading zero (`24:00` only as a range end) | wraps past midnight (`23:00-04:00`) |
-| `HOUR` | `Nh` or `N:*`, N = 0–23 (`8h` and `8:*` are the same item: a `TIME` whose minutes are wildcarded) | inclusive set of whole hours; wraps (`22h-2h` = `22:*-2:*` = 22, 23, 0, 1, 2); the two spellings may be mixed in one range (`8h-12:*`) |
-| `MINUTE` | `Nm` or `Nmin`, N = 0–59 (`30m` = `*:30`) | inclusive set of minutes of every hour; wraps (`50m-10m`) |
+| `HOUR` | `Nh` or `N:*`, N = 0–23 (`8h` and `8:*` are the same item: a `TIME` whose minutes are wildcarded) | not allowed, in either spelling (ambiguous, D25): use a `TIME` range, `15:00-16:00` |
+| `MINUTE` | `Nm` or `Nmin`, or `*:MM`; N, MM = 0–59 (`30m` = `*:30`) | only as `*:MM-*:MM`: a left-closed, right-open range of minutes of every hour (`*:15-*:20` = 15 up to, not including, 20 past every hour); wraps past the hour (`*:50-*:10`); a range with an `Nm`/`Nmin` end (`15m-20m`, `15m-*:20`) is not allowed (ambiguous, D25) |
 | `DATE` | `ISODATE` (wildcards allowed) | not allowed (use `--`, §6.5) |
 
 Numbers: < 100 is a DOM, ≥ 100 is a YEAR; 0 and 32–99 are errors. `2026-2028` is a year range.
-`TIME`, `HOUR` and `MINUTE` are separate kinds: a range may not mix them (`8h-12:00` is a mixed-kind range error), but the two spellings of one kind are interchangeable everywhere (`8h` = `8:*`). `Mon-Fri 8h-12h 30m` is a valid clause (minute 30 of hours 8 to 12 inclusive, i.e. 08:30, 09:30 … 12:30, each lasting one minute); a clause may combine `TIME`, `HOUR` and `MINUTE` items, which must all hold (§6.3). `HOUR`/`MINUTE` are not allowed in a span side (§6.5).
+`TIME`, `HOUR` and `MINUTE` are separate kinds: a range may not mix them (`15:00-*:20` is a mixed-kind range error), but the spellings of one kind are interchangeable as atoms (`8h` = `8:*`, `30m` = `*:30`). `Mon-Fri 08:00-13:00 30m` is a valid clause (minute 30 of the hours 8 to 12, i.e. 08:30, 09:30 … 12:30, each lasting one minute); a clause may combine `TIME`, `HOUR` and `MINUTE` items, which must all hold (§6.3). `HOUR`/`MINUTE` are not allowed in a span side (§6.5).
+
+**No hour ranges, no `Nm` ranges (D25).** `15h-16h` could mean the hour 15:00–16:00 or the two hours 15 and 16 (15:00–17:00), and `15m-20m` could mean the minutes 15 up to 20 or 15 through 20 inclusive. Instead of guessing, such ranges are errors, and the message names the replacement: write `15:00-16:00`, and `*:15-*:20` for minutes. These ranges are left-closed and right-open like every time range, so the ends must differ (`*:15-*:15` is an error) and a smaller end wraps into the next hour (`*:50-*:10` is `[h:50, h+1:10)` for every hour h). Atoms and lists of atoms such as `8h,10h` or `15m,45m` remain valid.
 A `TIME` that is not part of a range lasts one minute (`08:00` = `[08:00:00, 08:01:00)`), or exactly one second when written with seconds (`08:00:30` = `[08:00:30, 08:00:31)`).
 A numeric zone offset is a single token only when written without spaces (`UTC+2`); `UTC + 2 hours` is the zone `UTC` followed by the `+` of a relative interval (§9), while `UTC+2 hours` is an error (the unit `hours` has no number).
 Month and weekday names are case-insensitive and come from the effective `LC_TIME` locale (see *Locale-dependent calendar names* above). A single dash needs no whitespace but may have it (`Mon - Fri`), except inside an `ISODATE`.
@@ -326,7 +368,7 @@ A *clause* is a whitespace-separated sequence of items, optionally ending with a
 
 * at most one item group per kind; `DATE` excludes `YEAR`/`MONTH`/`DOM` in the same clause;
 * at least one non-`TZ` item;
-* `*` is only valid inside an `ISODATE` and as the minutes of an `HOUR` item (`8:*`);
+* `*` is only valid inside an `ISODATE`, as the minutes of an `HOUR` item (`8:*`) and as the hour of a `MINUTE` item (`*:30`, `*:15-*:20`);
 * a `DATE`/`DOM`/`MONTH` combination that can never exist is an error (`Feb 30`, `2026-02-29`, `*-04-31`) (this validation is delegated to the datetime library, not hand-written);
   `Feb 29` and `*-*-31` are fine.
 
@@ -336,7 +378,7 @@ covers every day. A clause without month, only day, covers that day in every mon
 ### 6.4 Lists and commas (D3)
 
 `a,b` builds a list inside one kind (`Wed,Fri`, `Jun,Jul,Aug`, `1,15`, `Mon-Wed,Fri`, `08:00-12:00,13:00-17:00`).
-**Rule:** a comma continues the current list iff the next item has the same kind as the item right before the comma;
+**Rule:** a comma continues the current list iff the next item has the same kind as the item right before the comma (and no span is involved, see *Spans and commas* below);
 otherwise the comma ends the current *term*, and the next item starts a new clause.
 
 | Text | Meaning |
@@ -345,8 +387,14 @@ otherwise the comma ends the current *term*, and the next item starts a new clau
 | `Apr 1, Jun 15` | two terms: Apr 1; Jun 15 |
 | `Mon-Fri 08:00-12:00,13:00-17:00` | one clause, two time ranges |
 | `Mon 08:00-09:00, Tue 10:00-11:00` | two terms |
+| `1 -- 5, 10 -- 12` | two spans: days 1–5 and days 10–12 |
+| `1 -- 5, 10` | a span and a clause: days 1–5, and day 10 |
+| `5, 10 -- 12` | a clause and a span: day 5, and days 10–12 |
+| `Apr 1 -- Apr 5, Apr 10 -- Apr 12` | two spans |
 
 A list may not mix single `TIME` atoms and time ranges. The union of all terms is the interval.
+
+**Spans and commas (D22).** A span side is a single date, never a list (§6.5): a span cannot end on 5 and on 10 too, and cannot start on 5 and on 10 too. So a comma never continues a list into or out of a span. A comma directly after a span ends the span's term, and a comma directly before a span (the text after the comma has the form `dateside -- dateside`) ends the term before it. The same-kind rule above does not apply at the ends of a span: in `1 -- 5, 10 -- 12` the `5` and the `10` are both days of the month, yet they are not a list. The union of the terms is taken as always; a `TZ` ends, and applies to, only the span or clause it follows (§9.2).
 
 A comma followed by a duration (`NUMBER unit`, e.g. `2 days`) never continues a list: `2` there is the count of a duration, not a day of month. It starts a new *part* of the INTERVAL, a relative expression (§6.6, §9.2): `Apr 1, 2 days before X` is the two parts `Apr 1` and `2 days before X`, never the day list `1,2`. Whitespace before or after a comma is insignificant: `10,20` equals `10, 20`, and `Jun 1,Jul 2` equals `Jun 1, Jul 2`.
 
@@ -354,7 +402,7 @@ A comma followed by a duration (`NUMBER unit`, e.g. `2 days`) never continues a 
 
 `A -- B` is a *span* between two dates.
 
-* Side forms: `ISODATE`, or `[YEAR] [MONTH] DOM`, each optionally followed by one `TIME`. No lists, ranges or weekdays. A `TZ` may end the whole span and applies to both sides.
+* Side forms: `ISODATE`, or `[YEAR] [MONTH] DOM`, each optionally followed by one `TIME`. No lists, ranges or weekdays. A comma after a side never extends it into a list: it ends the span (§6.4, D22), so `1 -- 5, 10 -- 12` is two spans. A `TZ` may end the whole span and applies to both sides.
 * Left side may be a lone DOM (`1 -- 5` means days 1 through 5 of every month, equivalent to `1-5`), or a concrete month and day; the year is optional (absent or `*` → recurring every year).
 * Right side may omit year and month: they are inherited from the left side (`2026 Apr 1 -- 20`, `Apr 1 -- Jun 15`, `2026 Apr 1 -- May 15`). Thus `2026 Apr 1 -- 20`, `2026 Apr 1-20` and `2026-04-01 -- 20` are equivalent.
 * If the right date is then before the left date: a right side with no month moves to the next month; a right side with no explicit year moves to the next year (so `Dec 20 -- Jan 10` and `2026 Dec 20 -- Jan 10` work).
@@ -373,11 +421,11 @@ part     = term
          | duration "after" anchor ;     (* §9.1 *)
 anchor   = span | clause ;
 term     = span | clause ;
-span     = dateside "--" dateside [ TZ ] ;
+span     = dateside "--" dateside [ TZ ] ;   (* a side is one date, never a list; commas around a span separate terms, §6.4 *)
 dateside = ( ISODATE | [ YEAR ] [ MONTH ] DOM ) [ TIME ] ;
 clause   = item { item } [ TZ ] ;
 item     = value { "," value } ;          (* values of one kind *)
-value    = atom [ "-" atom ] ;
+value    = atom [ "-" atom ] ;             (* no ranges of HOUR atoms or of Nm/Nmin atoms, §6.2 *)
 duration = NUMBER unit { NUMBER unit } ;
 unit     = second | minute | hour | day | week | month | year ;   (* optional plural "s" *)
 ```
@@ -393,7 +441,7 @@ unit     = second | minute | hour | day | week | month | year ;   (* optional pl
 * A clause is evaluated in its zone (§8): for every local calendar day that satisfies the day-level items, and every time range of the clause
   (default `00:00-24:00`), one range `[day+t1, day+t2)` is produced; if `t2 < t1` the end is on the following day (`t1 = t2` is an error). So the day selectors pick the  **starting** day (D2).
 * Missing time units are wildcards within their natural ranges. Thus bare `08:00` means the half-open interval `[08:00:00, 08:01:00)`, exactly the same as `08:00-08:01`; it is active at `08:00:59` and not at `08:01:00`.
-* A wildcard in a time selects every value of that field: `8h` (≡ `8:*`) selects the whole hour (`08:00-09:00`), and `30m` (≡ `*:30`) selects minute 30 of every hour (`00:30-00:31`, `01:30-01:31`, … one minute in each hour).
+* A wildcard in a time selects every value of that field: `8h` (≡ `8:*`) selects the whole hour (`08:00-09:00`), and `30m` (≡ `*:30`) selects minute 30 of every hour (`00:30-00:31`, `01:30-01:31`, … one minute in each hour). The minute range `*:15-*:20` is `[15, 20)` minutes past every hour (`00:15-00:20`, `01:15-01:20`, …); when its end is smaller (`*:50-*:10`) the end lies in the next hour (`00:50-01:10`, `01:50-02:10`, …), just as a time range wraps into the next day (D25).
 * Wall-clock → instant conversion, DST gaps and folds follow PEP 495 as implemented by `zoneinfo`: a nonexistent local endpoint uses the offset before the transition; an ambiguous endpoint uses the first occurrence (`fold=0`). Resolve each endpoint independently, then form the half-open UTC interval; ranges that become empty are dropped. This means a spring-gap range `02:00-03:00` in `Europe/Budapest` on 2026-03-29 is empty, while the fall-fold range `02:00-03:00` on 2026-10-25 spans both occurrences of local 02:00 and ends at 03:00 standard time. See V14 for mandatory boundary tests. **No calendar or zone arithmetic is hand-written**: use `datetime`, `zoneinfo`, `dateutil.relativedelta`.
 * An interval spec denotes an infinite (possibly periodic) set; implementations evaluate it **per window** (§10) with this contract:
   `eval(spec, lo, hi)` returns exactly `spec ∩ [lo, hi)`.
@@ -534,10 +582,10 @@ Output is formatted in the display zone with `--format`. During a DST fold the d
 
 Syntax and semantic errors, each reported with file and line:
 
-bad indentation / first line indented; macro with children; unknown word (every one of them is reported, with a `wrong locale?` hint where one applies);
-macro name reserved, already visible, empty, without a letter or starting with `!`; macro command failed (reported at the macro's line when it is defined, D18); duplicate item kind in a clause;
-mixed-kind range; time range with equal ends; numbers out of range; `*` outside `ISODATE`; 
-span with lists/ranges, missing time on one side, end before start with explicit year; `~` with no ancestor that has a STATE; empty INTERVAL;
+bad indentation (a dedent to a level that is not open, or tabs and spaces whose order depends on the tab width, §4.3) / first line indented; macro with children; unknown word (every one of them is reported, with a `wrong locale?` hint where one applies);
+macro name reserved (month/weekday names, grammar words, TZ tokens, §5.3), already visible, empty, without a letter or starting with `!`; macro command failed (reported at the macro's line when it is defined, D18); duplicate item kind in a clause;
+mixed-kind range; hour range or `Nm`/`Nmin` range (`15h-16h`, `15m-20m`, D25); time range with equal ends; numbers out of range; `*` outside `ISODATE`; 
+span with a range or weekday on a side (a comma never makes a list there, §6.4), missing time on one side, end before start with explicit year; `~` with no ancestor that has a STATE; empty INTERVAL;
 unknown IANA zone ID, invalid offset, or unsupported alphabetic timezone abbreviation; bad `--at`/option values.
 
 ---
@@ -681,6 +729,20 @@ Apr 1, 2 days = oops
 - Now = `2026-10-09 15:00:00`: `--at 14:00` → `2026-10-09 14:00:00`, no warning.
 - Now = `2026-10-09 01:06:00`: `--at 23:00` → today `2026-10-09 23:00:00` (still ahead), no warning.
 - Errors: `24:00`, `25:00`, `6:60`, `6:00x` (unknown zone token), `2026-10-09 06:00 Foo/Bar` (unknown zone), `2026-10-09T06:00` and abbreviations such as `CEST` (§8.1). With `--next-change`, `--at 06:00` (now 20:00 as above) searches from `2026-10-10 06:00:00`.
+
+**V19** indentation with tabs and spaces (D21; `→` is a tab and `·` a space, tests build the real characters; every config is run with `--check`, errors are `PATH:LINE` of the offending line). Valid (each list is one config, one line per item): 
+* `Mon = a` / `→08:00-09:00 = b` (tab child);
+* `Mon = a` / `····→08:00-09:00 = b` (spaces and a tab in one line: column 8, alt-column 5, deeper than the first line by both);
+* `Mon = a` / `→08:00-09:00 = b` / `→····09:00-10:00 = c` (`c` is a child of `b`);
+* `Mon = a` / `→# a comment` / `····` (a blank line) / `····08:00-09:00 = b` (comment and blank lines are not measured).
+
+Errors (exit 2, empty stdout): `Mon = a` / `→08:00-09:00 = b` / `········09:00-10:00 = c` (equal by column, different by alt-column); `Mon = a` / `····08:00-09:00 = b` / `→09:00-10:00 = c` (deeper by column only); `Mon = a` / `········08:00-09:00 = b` / `····09:00-10:00 = c` (dedent to no open level); a first line that starts with a space, and one that starts with a tab.
+
+**V20** commas and spans (`tz=Europe/Budapest`, year 2026; D22). `1 -- 5, 10 -- 12 = x`: active at 2026-10-05 23:59:59 and at 2026-10-12 23:59:59, inactive at 2026-10-06 00:00:00 and at 2026-10-13 00:00:00 (the ranges are `[1st 00:00, 6th 00:00)` and `[10th 00:00, 13th 00:00)` in every month); `--next-change` at 2026-10-06 12:00 is `2026-10-10 00:00:00`, at 2026-10-12 12:00 it is `2026-10-13 00:00:00`. `1 -- 5, 10 = y` is days 1–5 plus day 10 (active at 2026-10-10 12:00, inactive at 2026-10-06 12:00). `5, 10 -- 12 = z` is day 5 plus days 10–12 (active at 2026-10-05 12:00 and 2026-10-11 12:00, inactive at 2026-10-09 12:00 and 2026-10-13 12:00). `Apr 1 -- Apr 5, Apr 10 -- Apr 12 = w` is two spans (active at 2026-04-12 12:00, inactive at 2026-04-07 12:00). Still errors: `1-3 -- 10 = x` and `Mon -- Fri = x` (a range or weekday on a side), `1 -- 5, = x` (trailing comma, V17).
+
+**V21** macros and time-zone words (D23, D24). With `tz=UTC`, `Budapest := Mon`, `Europe := Tue` and `Budapest 08:00-09:00 Europe/Budapest = x`: only the stand-alone `Budapest` is expanded, so the line is `Mon 08:00-09:00 Europe/Budapest`; `x` is active at 2026-10-12 06:30:00 UTC (a Monday; Budapest is UTC+2), inactive at 2026-10-12 05:59:59 UTC and at 2026-10-13 06:30:00 UTC. Each of these macro definitions is an error (exit 2, empty stdout, `reserved`): `Europe/Budapest := Mon`, `europe/budapest := Mon`, `utc := Mon`, `Z := Mon`, `UTC+2 := Mon`, `GMT-0330 := Mon`, and `CET := Mon` when `zoneinfo.available_timezones()` contains `CET`; the expected result for a zone ID is asked of the `timezones` module, not hard-coded. These are valid names: `Budapest`, `CEST` (an abbreviation that is not a zone ID), `Europe/Budapest time`. `CEST` used as a `TZ` in an INTERVAL with no such macro stays an error (V9).
+
+**V22** hour and minute ranges (`tz=Europe/Budapest`, Friday 2026-10-09; D25). Errors (exit 2, empty stdout, the message names the replacement): `15h-16h = x`, `8h-12h = x`, `22h-2h = x`, `8:*-12:* = x`, `8h-12:* = x`, `15m-20m = x`, `15min-20min = x`, `15m-*:20 = x`, `*:15-20m = x`, `*:15-*:15 = x` (equal ends), `15:00-*:20 = x` (mixed kinds). Valid: `15:00-16:00 = a` is active at 15:00:00 and 15:59:59, inactive at 16:00:00. `*:15-*:20 = b` is active at 03:15:00 and 03:19:59, inactive at 03:14:59 and 03:20:00; `--next-change` at 03:15:00 is `03:20:00` and at 03:20:00 it is `04:15:00`. `*:50-*:10 = c` is active at 03:50:00, 03:59:59, 04:00:00 and 04:09:59, inactive at 03:49:59 and 04:10:00. `8h = d` is `[08:00, 09:00)`; `8h,10h = e` is 08:00–09:00 and 10:00–11:00; `30m = f` is `[h:30, h:31)` every hour. `Mon-Fri 08:00-13:00 30m = g` is active at 08:30:00 and 12:30:59 on the Friday, inactive at 08:29:59, at 13:30:00 and on the Saturday 2026-10-10 at 10:30.
 
 ---
 
