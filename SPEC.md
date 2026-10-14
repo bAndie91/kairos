@@ -288,7 +288,7 @@ After macro expansion the text is tokenised, whitespace being insignificant exce
 | Token | Form |
 |-------|------|
 | `ISODATE` | `Y-m-D`, `Y` = 4 digits or `*`, `m` and `D` = 1–2 digits or `*`; no inner whitespace |
-| `TIME` | `HH:MM`, `HH:MM:SS` |
+| `TIME` | `H:MM[:SS]`: hour `H` = 1–2 digits, `MM` and `SS` = 2 digits (`8:00` = `08:00`); the same form is used for `--at` (§2.3) |
 | `HOUR`, `MINUTE` | digits immediately followed by `h` (`8h` = `8:*`, every minute of hour 8), or by `m` / `min` (`30m`, `30min` = `*:30`, minute 30 of every hour); no whitespace between digits and suffix |
 | `NUMBER` | digits |
 | `--` `-` `+` `,` `*` | punctuation (`--` is a span operator, `-` a range operator) |
@@ -311,7 +311,7 @@ Unknown word → error (`unknown word 'X' (undefined macro?)`).
 | `MONTH` | a full or abbreviated month name recognized by the effective `LC_TIME` locale's date/time facilities | wraps across the calendar year (the locale's December-to-February equivalent selects December, January, February) |
 | `DOM` | integer 1–31 (leading zero ok) | wraps (`28-3` = 28…31, 1…3) |
 | `WEEKDAY` | a full or abbreviated weekday name recognized by the effective `LC_TIME` locale's date/time facilities | wraps from the locale's last weekday to its first weekday |
-| `TIME` | `H:MM[:SS]` (`24:00` only as a range end) | wraps past midnight (`23:00-04:00`) |
+| `TIME` | `H:MM[:SS]`, H = 0–23 with or without a leading zero (`24:00` only as a range end) | wraps past midnight (`23:00-04:00`) |
 | `HOUR` | `Nh`, N = 0–23 (`8h` = `8:*`) | inclusive set of whole hours; wraps (`22h-2h` = 22, 23, 0, 1, 2) |
 | `MINUTE` | `Nm` or `Nmin`, N = 0–59 (`30m` = `*:30`) | inclusive set of minutes of every hour; wraps (`50m-10m`) |
 | `DATE` | `ISODATE` (wildcards allowed) | not allowed (use `--`, §6.5) |
