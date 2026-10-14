@@ -439,7 +439,7 @@ At top level it is the complement of INTERVAL.
 
 Alphabetic timezone abbreviations other than `UTC`/`GMT` are **not accepted as input TZ tokens**. There is no standardized, globally unique abbreviation-to-zone registry: the IANA Time Zone Database records abbreviations as part of individual zones' historical and future rules, and the same abbreviation can identify different zones or offsets. A name that is itself an IANA zone ID in `zoneinfo.available_timezones()` (legacy IDs such as `CET`, `EET`, `WET`, `MET`, `EST`, `MST`, `HST`, `PST8PDT`) is accepted as that ID, because the ID lookup comes first; the rejection applies to alphabetic names that are not IANA zone IDs (e.g. `CST`, `CEST`, `IST`, `EDT`, `PST`). Do not infer a zone from a string such as `CST` or `CEST`, and do not ship a hand-written mapping. Use an IANA zone ID when calendar/DST rules are intended, or a numeric offset when a fixed offset is intended.
 
-For diagnostics and display, timezone abbreviations exposed by `zoneinfo`/`datetime.tzname()` come from the installed IANA TZDB (system zoneinfo data, or the Python `tzdata` package fallback where available). Their values may vary with the chosen zone, date, and installed TZDB version; they are labels, not unique identifiers. See the [IANA tz database theory](https://www.iana.org/time-zones/theory), which explicitly warns that abbreviations such as `CST` are ambiguous, and [Python `zoneinfo` documentation](https://docs.python.org/3/library/zoneinfo.html).
+For diagnostics and display, timezone abbreviations exposed by `zoneinfo`/`datetime.tzname()` come from the installed IANA TZDB (the system `tzdata`, §12). Their values may vary with the chosen zone, date, and installed TZDB version; they are labels, not unique identifiers. See the [IANA tz database theory](https://www.iana.org/time-zones/theory), which explicitly warns that abbreviations such as `CST` are ambiguous, and [Python `zoneinfo` documentation](https://docs.python.org/3/library/zoneinfo.html).
 
 No `TZ` → the default zone (`--tz`, else `$TZ`, else system zone via `tzlocal`; fallback UTC with a stderr warning). `$TZ` follows the same accepted forms; POSIX rule strings and bare abbreviations are not interpreted specially.
 The zone applies to the whole clause (or span): the calendar days, the times of day and any duration arithmetic of §9.
@@ -458,7 +458,7 @@ To list zone IDs available to the same database used by Python:
 python3 -c 'from zoneinfo import available_timezones; print("\\n".join(sorted(available_timezones())))'
 ```
 
-The installed data source is normally system TZDB; Python's `tzdata` package is the fallback when system zoneinfo data is unavailable. The abbreviation set is not a portable or unique index of zones; select an IANA zone ID explicitly.
+The data source is the system TZDB (the system `tzdata`, §12); there is no other fallback. The abbreviation set is not a portable or unique index of zones; select an IANA zone ID explicitly.
 
 ---
 
