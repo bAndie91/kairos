@@ -361,12 +361,11 @@ Inside a relative expression a comma never continues a list: it always ends the 
 
 * Side forms: `ISODATE`, or `[YEAR] [MONTH] DOM`, each optionally followed by one `TIME`. No lists, ranges or weekdays. A `TZ` may end the whole span and applies to both sides.
 * Left side may be a lone DOM (`1 -- 5` means days 1 through 5 of every month, equivalent to `1-5`), or a concrete month and day; the year is optional (absent or `*` → recurring every year).
-* Right side may omit year and month: they are inherited from the left side (`2026 Apr 1 -- 20`, `Apr 1 -- Jun 15`, `2026 Apr 1 -- May 15`).
+* Right side may omit year and month: they are inherited from the left side (`2026 Apr 1 -- 20`, `Apr 1 -- Jun 15`, `2026 Apr 1 -- May 15`). Thus `2026 Apr 1 -- 20`, `2026 Apr 1-20` and `2026-04-01 -- 20` are equivalent.
 * If the right date is then before the left date: a right side with no month moves to the next month; a right side with no explicit year moves to the next year (so `Dec 20 -- Jan 10` and `2026 Dec 20 -- Jan 10` work).
 * Without times: whole days, **end date inclusive** → `[00:00 of first day, 00:00 after last day)`.
   With times: both sides must have one; `[start, end)`.
-* Recurring span in a year where an endpoint does not exist (`Feb 29`) → round the date to the latest existing date/time that is before the endpoint in that year  (ie. Febr 28), like Febr 29 would compressed in a virtual zero length instant between Febr 28 and Mar 1.
-* thus `2026 Apr 1 -- 20`, `2026 Apr 1-20` and `2026-04-01 -- 20` are equivalent.
+* A date that does not exist in a given year (`Feb 29` in a non-leap year) is not a day of the span and contributes no day: the span covers exactly those of its days that exist. So `Feb 29 -- Mar 1` is two days (Feb 29, Mar 1) in a leap year and one day (Mar 1) in a non-leap year; `Feb 20 -- Feb 29` ends on Feb 29 in a leap year and on Feb 28 otherwise; `Feb 29 -- Feb 29` is Feb 29 in a leap year and empty otherwise. As instants: a nonexistent endpoint, whether the start or the (exclusive) end, is the boundary between Feb 28 and Mar 1, i.e. Mar 1 00:00 in the span's zone; a `TIME` written on such a side is ignored.
 
 ### 6.6 Complete grammar
 
@@ -618,7 +617,7 @@ at 2026-10-09 10:00 → `run`; at 2026-10-10 00:00:00 → ∅; next at 2026-10-0
 at 2026-11-14 23:59:59 → ∅; at 2026-11-15 00:00:00 → `runup`; at 2026-12-24 12:00 → `runup`, next `2026-12-25 00:00:00`.
 
 **V8** spans: `Apr 1 -- Jun 15 = spring` active at 2027-06-15 23:59:59, not at 2027-06-16 00:00:00. `Dec 20 -- Jan 10 = holidays`: active at 2027-01-05 12:00; next at 2026-10-09 12:00 → `2026-12-20 00:00:00`.
-`2026 Apr 1 -- 20 = x` active at 2026-04-20 12:00, not at 2026-04-21 00:00:00, not at 2027-04-10.
+`2026 Apr 1 -- 20 = x` active at 2026-04-20 12:00, not at 2026-04-21 00:00:00, not at 2027-04-10. `Feb 29 -- Mar 1 = leap`: in 2028 (leap) two days, active at 2028-02-29 00:00:00 and 2028-03-01 23:59:59, not at 2028-02-28 23:59:59 and not at 2028-03-02 00:00:00; in 2027 (non-leap) one day, not active at 2027-02-28 12:00, active at 2027-03-01 00:00:00 and 2027-03-01 23:59:59, not at 2027-03-02 00:00:00. `Feb 20 -- Feb 29` ends after Feb 29 in 2028 and after Feb 28 in 2027 (not active at 2027-03-01 00:00:00); `Feb 29 -- Feb 29` is empty in 2027.
 
 **V9** zones (`tz=UTC`): `*-12-* 08:00-09:00 Europe/Berlin = t` → active at 2026-12-01 07:30:00, not at 2026-12-01 06:59:59. `*-07-* 08:00-09:00 Europe/Berlin = t` → active at 2026-07-01 06:30:00. `08:00-09:00 UTC+0300 = t` → active at 2026-10-09 05:30:00. Bare alphabetic abbreviations such as `CEST` and `CST` as TZ tokens must error and ask for an IANA zone ID or numeric offset.
 
