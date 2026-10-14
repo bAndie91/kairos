@@ -421,8 +421,8 @@ At top level it is the complement of INTERVAL.
 
 ### 7.4 Reported states
 
-* The state *name* is the STATE after `~` substitution and escape processing.
-* A line is **reported** iff it has a STATE that does not start with `@` and the resolved *name* is not empty.
+* The state *name* is the STATE after `~` substitution and escape processing. A line without an `= STATE` portion has an empty name.
+* A line is **reported** iff its name is not empty, i.e. the line has an `= STATE` portion, and that STATE does not start with `@`.
 * Several lines may yield the same name; the state is active when **any** of them is effective (`U(name)` = union of their effective sets).
 * Output order: the order in which a name's first line appears in the file (depth-first, as written). 
 * State at instant `t`: `{ name : t ∈ U(name) }`.
