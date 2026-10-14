@@ -6,7 +6,7 @@ This plan lists what is done (§3, traces only) and what remains (§4, one item 
 ## 0. How to use this plan (read first)
 
 1. Pick **one** item from §4 (the lowest-numbered one whose dependencies are done, unless told otherwise). Do only that item, then stop. Each item is sized for a single short session: read only the SPEC sections it names, run the focused tests while working and the full suite (`make test`, about 35 s) once at the end.
-2. `SPEC.md` wins over this plan. If the spec is ambiguous or contradicts itself, record the exact conflict in §5 and ask the author; do not guess and do not silently pick a parse error. Behaviour is changed in `SPEC.md` only in a separate commit whose message starts with `spec:` (decisions are D1–D20 in SPEC §0).
+2. `SPEC.md` wins over this plan. If the spec is ambiguous or contradicts itself, record the exact conflict in §5 and ask the author; do not guess and do not silently pick a parse error. Behaviour is changed in `SPEC.md` only in a separate commit whose message starts with `spec:` (decisions are D1–D25 in SPEC §0).
 3. When an item is finished and its acceptance checks pass, **delete it from §4** and, if it completes part of the spec, add a one-line trace to §3.
 4. Commit small, imperative subject line (`Run unused command macros under --check`). Never commit credentials.
 
@@ -47,7 +47,7 @@ Module `names.py` is the only place that knows about locales; AST dataclasses li
 
 ## 4. Remaining work: one item per session
 
-Items T1–T8 are independent of each other; T9 comes after T1, T2 and T4.
+Items T1–T8 and T10–T13 are independent of each other; T9 comes after T1, T2, T4 and T10–T13.
 
 ### T1 — `--at` bare date and bare time (SPEC §2.3, D20, V18)
 
@@ -131,6 +131,46 @@ Files: `man/kairos.1`, `README.md`, `kairoslib/cli.py` help texts. Read: SPEC §
 
 Acceptance: every option and rule in SPEC §2 appears in the man page; no statement in man/README contradicts the SPEC.
 
+### T10 — Python-style indentation (SPEC §4.2, §4.3, D21, V19)
+
+Read: SPEC §4.3, D21, V19. Files: `kairoslib/reader.py` (`read_config`), `tests/test_reader.py`; `man/kairos.1` (its indentation paragraph still says "never both in one line").
+
+* Replace the "indentation may not mix spaces and tabs" rejection and the `expandtabs(8)` comparison by the two-measure rule of §4.3: every line gets a (column, alt-column) pair, compared with the pairs of the open levels, which therefore have to be kept on the stack, not only the columns. Messages: `inconsistent use of tabs and spaces in indentation` and `unindent does not match any outer indentation level`.
+* Unchanged: blank and comment lines are not measured; the first line has no indentation; macro lines have no children; `KAIROS_*_<LEVEL>` still counts depth, not columns.
+* Tests: every V19 row, plus a randomized comparison of `read_config` with Python's own tokenizer (random tab/space prefixes; compare consistent / `TabError` / dedent error with `tokenize.generate_tokens`). A reference implementation of the SPEC rule agreed with the tokenizer on 20 000 random cases.
+
+Acceptance: V19 passes; `make test` green.
+
+### T11 — Commas next to spans (SPEC §6.4, §6.5, D22, V20)
+
+Read: SPEC §6.4, §6.5, D22, V20. Files: `kairoslib/parser.py` (list and term splitting), `kairoslib/lexer.py` only if needed; `tests/test_parser.py`, `tests/test_evaluate.py`, one `--next-change` row in `tests/test_next_change.py`; `man/kairos.1` (lists and spans).
+
+* A comma after the right side of a span ends the term; a comma before a value that starts a span (a date side followed by `--`) ends the term. So `1 -- 5, 10 -- 12` is two spans, `1 -- 5, 10` a span and a clause, `5, 10 -- 12` a clause and a span. This needs a lookahead for `--` after `[YEAR] [MONTH] DOM [TIME]` / `ISODATE [TIME]`.
+* Outside spans the list rule (D3) and the `NUMBER unit` rule (D19) stay as they are.
+* Tests: every V20 row, including the "still errors" list; whitespace around these commas is insignificant like everywhere else.
+
+Acceptance: V20 passes; `make test` green.
+
+### T12 — TZ tokens are reserved macro names; `/` is not a word boundary (SPEC §5.2, §5.3, D23, D24, V21)
+
+Read: SPEC §5.2, §5.3, D23, D24, V21. Files: `kairoslib/timezones.py` (new `is_tz_token(text) -> bool`: true iff `resolve_tz` accepts the text; no zone list of its own), `kairoslib/macros.py` (`validate_macro_name`, `_expansion_pattern`), `tests/test_macros.py`, `tests/test_timezone.py`; `man/kairos.1` (macro names, reserved words).
+
+* `validate_macro_name` rejects a name that is entirely a TZ token (`macro name … is reserved`); `lexer.is_reserved_word` keeps covering month/weekday names and grammar words. `macros` may import `timezones`; `timezones` must not import `macros` or `lexer`.
+* `_expansion_pattern`: use `(?<![\w/])` and `(?![\w/])` instead of `(?<!\w)` and `(?!\w)`, on the sides where the name starts or ends with a word character.
+* Tests: every V21 row; a zone-ID case is skipped when that ID is not in the installed TZDB.
+
+Acceptance: V21 passes; `make test` green.
+
+### T13 — No hour ranges; `*:MM-*:MM` minute ranges (SPEC §6.1–§6.3, §7.1, D25, V22)
+
+Read: SPEC §6.1–§6.3, §7.1, D25, V22. Files: `kairoslib/lexer.py`, `kairoslib/parser.py` (HOUR/MINUTE handling, around lines 200 and 420), `kairoslib/evaluate.py` (minute windows), `kairoslib/defaults.py` (the example `Mon-Fri 8h-12h 30m` becomes `Mon-Fri 08:00-13:00 30m` and its caption changes; V11 must keep passing), `tests/test_parser.py` (~lines 108–113), `tests/test_evaluate.py` (~lines 124–150 and 302), `tests/test_defaults.py`; `man/kairos.1` (HOUR/MINUTE table rows).
+
+* HOUR ranges in either spelling and ranges with an `Nm`/`Nmin` end are errors whose message names the replacement (`15:00-16:00`, `*:15-*:20`).
+* `*:MM-*:MM` is a half-open minute range: `[h:MM1, h:MM2)` for every hour h, wrapping into the next hour when the end is smaller; equal ends are an error; mixing with another kind is the usual mixed-kind error. `*` is also valid as the hour of a `MINUTE` item (§6.3).
+* Rewrite the tests that assert inclusive ranges (`8h-12h`, `22h-2h`, `50m-10m`, `Mon-Fri 8h-12h 30m`) so that they use the new forms.
+
+Acceptance: V22 and V11 pass; `make test` green.
+
 ## 5. Open questions and implementation notes for the author
 
 Open:
@@ -138,11 +178,13 @@ Open:
 * D20 details I chose, please confirm: bare date and bare time take no offset; a bare time exactly 12 hours in the past stays today; the warning text in SPEC §2.3. – author acknowledges
 * `--check` runs an unused command macro with the context of its enclosing lines only (SPEC §5.4); the previous implementation note spoke of "lines above its definition". - author acknowledges
 * V14 on Python 3.9/3.10 and `tzlocal` discovery: T8.
+* D24 makes `/` part of a word for macro expansion, but `-` is still a boundary (it is the range operator, `Mon-Fri`). So a macro named `Prince` or `au` can still alter `America/Port-au-Prince`; likewise `Porto-Novo`, `Blanc-Sablon`, `Ust-Nera`. Options: leave it (the author named the macro like a fragment of a zone ID), or never expand inside a token that is a TZ token. Which one? (D23 already stops a macro from being named like a whole zone ID.)
+* D23 reading to confirm: only what `resolve_tz` accepts is reserved, so `CEST`, `CST`, `IST` stay usable as macro names (`CEST := Europe/Berlin` works). Reserving every alphabetic abbreviation would need an abbreviation list, which D9 rules out. Also note that the reserved set follows the installed TZDB, so a config may be valid on one machine and rejected on another when a macro is named like a zone ID that only one of them has (`CET`, `Factory`, `localtime` are IDs on some systems).
 
 Implementation choices not in the SPEC (promote into the SPEC with a `spec:` commit, or reject):
 
 * A clause's `TIME`, `HOUR` and `MINUTE` items are turned into daily windows and intersected - author needs explanation
-* a wrapping hour range (`22h-2h`) spills into the next day, a wrapping minute range (`50m-10m`) into the next hour. - author acknowledges
+* a wrapping hour range (`22h-2h`) spills into the next day, a wrapping minute range (`50m-10m`) into the next hour. - author acknowledges. Superseded by D25: hour ranges are gone, and the minute range is written `*:50-*:10` (T13).
 * Duration arithmetic for `+`, `until`, `before`, `after` uses the zone of the first anchor term that names a zone, else the default zone. - author acknowledges
 * An anchor with no instance start/end (always on, e.g. `00:00-24:00 + 1 day`) has no meaningful result; the look-back is capped at 100 years so evaluation terminates. - author acknowledges
 * `--next-change` searches up to `MAX_T`, two days before 9999-12-31 (a margin for zone-offset conversion); changes in the last two days of year 9999 are out of reach. - author acknowledges
@@ -165,7 +207,7 @@ Implementation choices not in the SPEC (promote into the SPEC with a `spec:` com
 | Relative intervals whose anchor starts long before the window                               | Widen look-back until the first relevant anchor instance is complete; tests with long durations. |
 | Adjacent ranges across midnight or DST must merge, or `--next-change` reports false changes | Merge in `RangeSet`; V13 oracle test.                                                            |
 | Zone IDs colliding with macro or month/weekday words                                        | Explicit lexer order and reserved-name rules; no abbreviation table.                             |
-| Macro text substitution altering zone names                                                 | Specified limitation (SPEC §5.2); do not "fix" silently.                                         |
+| Macro text substitution altering zone names                                                 | `/` is not a word boundary (SPEC §5.2, D24); hyphenated IDs stay a limitation (§5, open).        |
 | `ncal -e` output is locale-dependent                                                        | Never rely on it in tests; use the fake `ncal` and the `date -d` wrapper.                        |
 
 ## 8. Definition of done
