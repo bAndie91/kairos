@@ -12,15 +12,15 @@ active states will next change.
 ## 0. Review guide: decisions agent had to make
 
 Each item below is a decision agent took so the spec could be complete.
-Author reviewed them and stroke out no-go alternatives, and clarified in Review comment column.
+The author reviewed them, struck out the rejected alternatives and clarified in the Review comment column.
 
 | # | Topic | Decision taken (spec section) | Alternative | Review comment |
 |---|-------|-------------------------------|-------------|----------------|
-| D1 | `*-*-01` with child `Fri` | Plain intersection: "the 1st of the month **when it is a Friday**". "First Friday of the month" is `1-7 Fri`. The wording in your example comment ("1st Friday of every month") does not match intersection semantics. (§7.2) | ~~Add a dedicated "n-th weekday" syntax~~ |
+| D1 | `*-*-01` with child `Fri` | Plain intersection: "the 1st of the month **when it is a Friday**". "First Friday of the month" is `1-7 Fri`. The phrase "1st Friday of every month" does not match intersection semantics. (§7.2) | ~~Add a dedicated "n-th weekday" syntax~~ |
 | D2 | Rollover time range plus day selector on **one line** (`Fri 22:00-02:00`) | Day selectors pick the *starting* day; the range may spill into the next day (Fri 22:00 → Sat 02:00). When the same pieces are on **nested lines** (`Fri` / `  22:00-02:00`) the result is a pure set intersection (Fri 00:00–02:00 ∪ Fri 22:00–24:00). (§7.1) | ~~Always pure intersection~~ |
 | D3 | Commas | A comma continues the current list only if the next item is of the **same kind** as the item before the comma; otherwise it separates terms. So `Mon-Fri 08:00-12:00,13:00-17:00` is a cross product, and `Apr 1, Jun 15` is two days. (§6.4) | ~~Comma always separates terms~~ |
 | D4 | Command macros (`NAME := ! cmd`) vs. "intervals not covering the current time are skipped" | Commands run **eagerly**, in file order, when the macro definition line is reached in the single parse pass (never lazily on first use). In the default mode, subtrees under a parent that is **not active at the evaluation time** are skipped (their commands do not run). `--next-change` and `--check` never skip. The command's environment carries `KAIROS_INTERVAL_*` / `KAIROS_STATE_*` of the definition line's **ancestors** only, and `KAIROS_MACRO_*` of the macros visible at that line. (§5.1, §5.4) | ~~Lazy evaluation (run a command when its macro is first used)~~ | author: no lazy evaluation; evaluate eagerly |
-| D5 | `Easter := ! ncal -e` | `ncal -e` prints a **locale-dependent, US-style** date (`04/05/26` on my test machine), which the INTERVAL grammar (ISO dates only) rejects. The example parses as a macro definition but would fail on use. Use a wrapper such as `! date -d "$(ncal -e)" +%F`. Also: a command's output is a snapshot, so a recurring date computed by a command is only valid for the year it was computed in (§5.5). | ~~Accept `MM/DD/YY` (rejected: locale-dependent, ambiguous)~~ | ignore what you `ncal` outputs. keep that `date` command in the examples. no introduce mm/dd/yy format. |
+| D5 | `Easter := ! ncal -e` | `ncal -e` prints a **locale-dependent, US-style** date (e.g. `04/05/26` in a US locale), which the INTERVAL grammar (ISO dates only) rejects. The example parses as a macro definition but would fail on use. Use a wrapper such as `! date -d "$(ncal -e)" +%F`. Also: a command's output is a snapshot, so a recurring date computed by a command is only valid for the year it was computed in (§5.5). | ~~Accept `MM/DD/YY` (rejected: locale-dependent, ambiguous)~~ | ignore what you `ncal` outputs. keep that `date` command in the examples. no introduce mm/dd/yy format. |
 | D6 | `40 days until Dec 24` | End is the **end of the whole anchor instance** (so Dec 24 itself is included, mirroring `--` whose end date is inclusive). Range = Nov 15 00:00 → Dec 25 00:00. (§9) | ~~End at the *start* of Dec 24~~ | "until Dec 24" means "up to and including Dec 24" |
 | D7 | `~` in a STATE whose parent has no STATE | Inherit from the nearest ancestor with a STATE; it is an error only when no ancestor has a STATE. (§4.4) | ~~Parse error.~~ | author: inherit |
 | D8 | Macro redefinition | Error if the name is already **visible** (same scope or an enclosing active scope). Sibling scopes may reuse a name. (§5.3) | ~~Error only in the very same scope (allow shadowing)~~ |
@@ -44,8 +44,6 @@ at which the set of active states changes.
 
 Out of scope for v1: daemon/watch mode, notifications, running actions on change, config includes,
 calendars other than Gregorian, sub-second precision, sandboxing of macro commands.
-
-Document these OOS points.
 
 ---
 
@@ -156,7 +154,7 @@ using it. If `--config` names a file that does not exist: error, nothing created
 
 The default config has **no active lines** and consists of examples. It may open with a short `## ` header that says where the documentation is (`man kairos`, `kairos --check`, `kairos --print-default-config`). The complete command-line and configuration reference, including the macro-command security note (§12), lives in `man/kairos.1`; do not duplicate it in the default config.
 
-Every example config line is written as `# ` followed by the original line (indentation preserved after that single space). **Test requirement:** stripping the leading `# ` from example lines must yield a config that parses successfully. Explanatory prose inside the block goes in lines starting with `## `, which the test ignores. Include all examples from the brief, with `Easter` using the working wrapper from D5.
+Every example config line is written as `# ` followed by the original line (indentation preserved after that single space). **Test requirement:** stripping the leading `# ` from example lines must yield a config that parses successfully. Explanatory prose inside the block goes in lines starting with `## `, which the test ignores. Include examples that together cover every syntax feature of this specification (clauses, lists, ranges, spans, relative forms, zones, nesting, negation, `~` and `@`, string and command macros), with `Easter` using the working wrapper from D5.
 
 ---
 
@@ -217,7 +215,7 @@ NAME := ! COMMAND         shell command; its stdout is the value
 * STRING: other macros visible at that point are expanded in it (once, §5.2) and the result is the value.
   A STRING cannot start with a literal `!` (that always means COMMAND).
 * COMMAND: run with `${SHELL:-/bin/sh} -c COMMAND`, stdin from `/dev/null`, stderr passed through,
-  Multiline output collaptsed into 1 line by `s/\n/ /g`. Trailing newline is stripped.
+  Multiline output is collapsed into one line by `s/\n/ /g`. Trailing newline is stripped.
   The command runs eagerly, when its definition line is reached (§5.4, D4), and its output is the macro's value from then on. Exit status ≠ 0 → error, reported with the macro's file and line (D18).
   Macros are **not** expanded in COMMAND text. Instead the environment contains:
   * everything inherited from the caller;
@@ -329,11 +327,11 @@ A *clause* is a whitespace-separated sequence of items, optionally ending with a
 * at most one item group per kind; `DATE` excludes `YEAR`/`MONTH`/`DOM` in the same clause;
 * at least one non-`TZ` item;
 * `*` is only valid inside an `ISODATE` and as the minutes of an `HOUR` item (`8:*`);
-* a `DATE`/`DOM`/`MONTH` combination that can never exist is an error (`Feb 30`, `2026-02-29`, `*-04-31`) - but dont try to be smart here, offload this validation to the datetime library;
+* a `DATE`/`DOM`/`MONTH` combination that can never exist is an error (`Feb 30`, `2026-02-29`, `*-04-31`) (this validation is delegated to the datetime library, not hand-written);
   `Feb 29` and `*-*-31` are fine.
 
 A clause with no `TIME` item covers whole days. A clause with no day-level item (`YEAR`, `MONTH`, `DOM`, `WEEKDAY`, `DATE`)
-covers every day. A clause without month, only day, covers that day in every months. An `HOUR` item (`8h`, `8:*`: a time with wildcarded minutes) covers every minute of that hour.
+covers every day. A clause without month, only day, covers that day in every month. An `HOUR` item (`8h`, `8:*`: a time with wildcarded minutes) covers every minute of that hour.
 
 ### 6.4 Lists and commas (D3)
 
@@ -423,7 +421,7 @@ At top level it is the complement of INTERVAL.
 ### 7.4 Reported states
 
 * The state *name* is the STATE after `~` substitution and escape processing.
-* A line is **reported** iff it has a STATE that does not start with `@` and the resolved *name* is not empty.
+* A line is **reported** iff it has a STATE (the line has an `= STATE` portion; a line without one has an empty name and is never reported) and that STATE does not start with `@`.
 * Several lines may yield the same name; the state is active when **any** of them is effective (`U(name)` = union of their effective sets).
 * Output order: the order in which a name's first line appears in the file (depth-first, as written). 
 * State at instant `t`: `{ name : t ∈ U(name) }`.
@@ -440,7 +438,7 @@ At top level it is the complement of INTERVAL.
 
 Alphabetic timezone abbreviations other than `UTC`/`GMT` are **not accepted as input TZ tokens**. There is no standardized, globally unique abbreviation-to-zone registry: the IANA Time Zone Database records abbreviations as part of individual zones' historical and future rules, and the same abbreviation can identify different zones or offsets. A name that is itself an IANA zone ID in `zoneinfo.available_timezones()` (legacy IDs such as `CET`, `EET`, `WET`, `MET`, `EST`, `MST`, `HST`, `PST8PDT`) is accepted as that ID, because the ID lookup comes first; the rejection applies to alphabetic names that are not IANA zone IDs (e.g. `CST`, `CEST`, `IST`, `EDT`, `PST`). Do not infer a zone from a string such as `CST` or `CEST`, and do not ship a hand-written mapping. Use an IANA zone ID when calendar/DST rules are intended, or a numeric offset when a fixed offset is intended.
 
-For diagnostics and display, timezone abbreviations exposed by `zoneinfo`/`datetime.tzname()` come from the installed IANA TZDB (system zoneinfo data, or the Python `tzdata` package fallback where available). Their values may vary with the chosen zone, date, and installed TZDB version; they are labels, not unique identifiers. See the [IANA tz database theory](https://www.iana.org/time-zones/theory), which explicitly warns that abbreviations such as `CST` are ambiguous, and [Python `zoneinfo` documentation](https://docs.python.org/3/library/zoneinfo.html).
+For diagnostics and display, timezone abbreviations exposed by `zoneinfo`/`datetime.tzname()` come from the installed IANA TZDB (the system zoneinfo data). Their values may vary with the chosen zone, date, and installed TZDB version; they are labels, not unique identifiers. See the [IANA tz database theory](https://www.iana.org/time-zones/theory), which explicitly warns that abbreviations such as `CST` are ambiguous, and [Python `zoneinfo` documentation](https://docs.python.org/3/library/zoneinfo.html).
 
 No `TZ` → the default zone (`--tz`, else `$TZ`, else system zone via `tzlocal`; fallback UTC with a stderr warning). `$TZ` follows the same accepted forms; POSIX rule strings and bare abbreviations are not interpreted specially.
 The zone applies to the whole clause (or span): the calendar days, the times of day and any duration arithmetic of §9.
@@ -459,7 +457,7 @@ To list zone IDs available to the same database used by Python:
 python3 -c 'from zoneinfo import available_timezones; print("\\n".join(sorted(available_timezones())))'
 ```
 
-The installed data source is normally system TZDB; Python's `tzdata` package is the fallback when system zoneinfo data is unavailable. The abbreviation set is not a portable or unique index of zones; select an IANA zone ID explicitly.
+The data source is the system TZDB (D10, §12); there is no other source. The abbreviation set is not a portable or unique index of zones; select an IANA zone ID explicitly.
 
 ---
 
@@ -505,8 +503,7 @@ Mon,Fri + 2 days                              Mon, and Fri-Sat (not Mon-Tue)
 2 days before Mon,Fri                         Sat, and Fri
 ```
 
-* A comma between terms always starts a new part, unless it continues a list inside a clause (§6.4); a comma followed by `NUMBER unit` never continues a list (§6.4). Otherwise
-* Each part is evaluated on its own, with its own anchor, zone choice (§9) and arithmetic; the INTERVAL is their union. A `TZ` applies to the term it ends, as always, and never spills over to another part.
+* A comma between terms always starts a new part, unless it continues a list inside a clause (§6.4); a comma followed by `NUMBER unit` never continues a list (§6.4). Otherwise, each part is evaluated on its own, with its own anchor, zone choice (§9) and arithmetic; the INTERVAL is their union. A `TZ` applies to the term it ends, as always, and never spills over to another part.
 * The anchor of every relative form is a single comma-free term (§9) and a relative operator never reaches beyond its own term, in either direction and alike for `+`, `until`, `before` and `after` (`+` does not shift the terms before its anchor, `until`/`before`/`after` do not shift the terms after it), so a comma ends the relative expression regardless of whitespace and regardless of whether it would continue a list elsewhere: `2 days before Apr 10,Apr 20` and `2 days before Apr 10, Apr 20` are the two parts `2 days before Apr 10` and `Apr 20`, i.e. Apr 8 and Apr 20. Without the second month name, `2 days before Apr 10,20` is the two parts `2 days before Apr 10` and `20`, i.e. Apr 8 plus the 20th of every month. Likewise `Apr 10,Apr 20 + 2 days` is `Apr 10` and `Apr 20 + 2 days`, `Mon,Fri + 2 days` is `Mon` and `Fri + 2 days`, and `2 days before Mon,Fri` is `2 days before Mon` and `Fri`. For `+` the anchor starts right after the last comma before the operator (`Apr,Jun 1,15 + 2 days` is `Apr,Jun 1` and `15 + 2 days`). To shift several terms, repeat the form (`2 days before Apr 10, 2 days before Apr 20`); outside relative expressions commas still form lists (`Mon,Fri 08:00-09:00`).
 * The result is an ordinary set, like any other INTERVAL.
 
@@ -627,7 +624,7 @@ Q1 = first quarter
 ```
 at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names that start with another macro's name (D17): `Mary := Mon`, `Mary's birthday := Jun 1`, `Mary's birthday = party`, `Mary = m` → at 2026-06-01 10:00 (a Monday) `party`, `m`; at 2026-06-08 10:00 `m`. Whole-word rule: `mary := Mon` followed by `annamary = x` → error (unknown token `annamary`). Command macro: `A := Tue`, `D := ! echo "$KAIROS_MACRO_A"`, `D = x` → active on a Tuesday. Scope/pruning: a command macro inside `Jun,Jul,Aug = summer` runs under `--at` in July (and `KAIROS_INTERVAL_0` is `Jun,Jul,Aug`, `KAIROS_STATE_0` is `summer`), does not run under `--at` in October, runs in October with `--check` (and with `--next-change`). A command macro at the root level has no `KAIROS_INTERVAL_*` / `KAIROS_STATE_*` variables at all, and one at a deeper level never sees its own line there, only its ancestors' (`D := ! env` at level 1 under `Jun,Jul,Aug = summer` sees `KAIROS_INTERVAL_0` and `KAIROS_STATE_0`, not `..._1`). The command runs once, at its definition, even if no line uses the macro; a later use does not run it again.
 
-**V11** all-lines test: the complete example list from the brief (with the D5 wrapper for `Easter`) parses as one config under `--check`.
+**V11** all-lines test: the default config of §3.3, with the leading `# ` of its example lines stripped (`Easter` using the D5 wrapper), parses as one config under `--check`.
 
 **V12** each of these is an error (exit 2, empty stdout): `08:00-25:00 = x`; `Mon Tue = x`; `Foo = x`; `Mon = ~` (top level); `  Mon = x` as the first line; `Mon := x`; `7 := x`; `Q := Jan` twice; `Feb 30 = x`; `2026-02-29 = x`; `Mon =`; `= x`; `X := ! false` followed by a line that uses `X` (`X = x`); `08:00-08:00 = x`; unknown zone `Mon Foo/Bar = x`.
 
