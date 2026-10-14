@@ -630,6 +630,8 @@ at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names 
 
 **V12** each of these is an error (exit 2, empty stdout): `08:00-25:00 = x`; `Mon Tue = x`; `Foo = x`; `Mon = ~` (top level); `  Mon = x` as the first line; `Mon := x`; `7 := x`; `Q := Jan` twice; `Feb 30 = x`; `2026-02-29 = x`; `Mon =`; `= x`; `X := ! false` (alone: the command runs at its definition, used or not); `08:00-08:00 = x`; unknown zone `Mon Foo/Bar = x`.
 
+Command failures are errors at the macro's own line (D18): `X := ! false` on its own is an error in the default mode, with `--next-change` and with `--check` (exit 2, reported at the macro's line), whether or not a line uses `X`. The one exception is a macro inside a subtree skipped in the default mode (D4): `Jun,Jul,Aug = summer` with the child `  X := ! false` is fine (exit 0) under `--at` in October, and fails (exit 2) under `--at` in July and under `--check` or `--next-change`.
+
 **V13** brute-force oracle (property test): for each config above and random `at` values, `--next-change` equals the first `t' > at` found by stepping one second (or one minute when the config has no seconds) at which the printed state set differs.
 
 **V14** DST endpoint semantics and crossing ranges (all times below are UTC instants; use `Europe/Budapest` as the interval zone and evaluate exact boundaries with `--at`):
@@ -643,9 +645,17 @@ at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names 
   - `01:00-04:00 = crossing` spans `[2026-10-24 23:00:00, 2026-10-25 03:00:00)` UTC: active at 00:30:00, 01:30:00, and 02:30:00 UTC, inactive at 03:00:00 UTC.
   - `Mon-Fri 08:00-16:00 = work`: verify local wall-clock endpoints remain 08:00–16:00 and that UTC boundaries are one hour later than in summer after the fall-back.
 
-Command failures are errors at the macro's own line (D18): `X := ! false` on its own is an error in the default mode, with `--next-change` and with `--check` (exit 2, reported at the macro's line), whether or not a line uses `X`. The one exception is a macro inside a subtree skipped in the default mode (D4): `Jun,Jul,Aug = summer` with the child `  X := ! false` is fine (exit 0) under `--at` in October, and fails (exit 2) under `--at` in July and under `--check` or `--next-change`.
-
 Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` is `[08:00:00, 10:00:00)` (§9: the result starts at the instance start) and `2 hours until 08:00` is `[06:00:00, 08:00:00)` (the instance of a bare time is the instant `08:00:00`).
+
+**V15** locale-sensitive month and weekday names (run in subprocesses with environment variables set before Python starts; skip if the requested locale is not installed):
+
+- Hungarian effective locale: `LANG=hu_HU.UTF-8`, unset `LC_TIME` and `LC_ALL`. `március 15 = x` parses; `Mar 15 = x` fails as an unknown word.
+- English effective locale: `LANG=en_US.UTF-8`, unset `LC_TIME` and `LC_ALL`. `Mar 15 = x` parses; `március 15 = x` fails as an unknown word.
+- Precedence: with `LANG=hu_HU.UTF-8` and `LC_TIME=en_US.UTF-8` (and `LC_ALL` unset), English month/weekday names are recognized and Hungarian names are rejected. With `LANG=en_US.UTF-8` and `LC_TIME=hu_HU.UTF-8`, Hungarian names are recognized and English names are rejected.
+- `LC_ALL` overrides both: with `LC_ALL=hu_HU.UTF-8`, `LANG=en_US.UTF-8`, and `LC_TIME=en_US.UTF-8`, Hungarian names are recognized and English names are rejected.
+- Repeat the effective-locale checks for full and abbreviated weekday names, month ranges, weekday ranges, comma lists, macro-expanded names, and macro names reserved by month/weekday vocabulary.
+- Locale setup occurs before lexing. Verify locale-aware matching is case-insensitive only to the extent provided by the chosen date/time facilities, and that non-ASCII characters such as `á` survive tokenization and matching.
+- Run a subprocess per locale so Python's process-global locale state cannot leak between tests. Never require an unavailable locale to be installed; report a skip for that locale.
 
 **V16** `before` / `after` (`tz=Europe/Budapest`, year 2026):
 ```
@@ -668,16 +678,6 @@ Mon,Fri + 2 days = list
 Apr 1, 2 days = oops
 ```
 `two shifts` is exactly Apr 8 and Oct 4 (active 2026-04-08 00:00:00, inactive 2026-04-09 00:00:00 and 2026-04-10 12:00); `day and shift` is exactly Apr 1 and Apr 8 (never the days 1 and 2); `week` is every Monday and Tuesday (`[Mon 00:00, Wed 00:00)`) plus every Friday; `separate parts` is exactly Apr 8 and Apr 20 (the shift applies to `Apr 10` only); `list` is every Monday (`[Mon 00:00, Tue 00:00)`) plus every Friday and Saturday (`[Fri 00:00, Sun 00:00)`), never Monday–Tuesday, because the comma ends the anchor of `+` just as it does for `before`; `2 days before Apr 10,20` (like `2 days before Apr 10, 20`) is Apr 8 plus the 20th of every month, because the comma ends the relative expression regardless of whitespace and `20` is then a separate part, a day of month; the last line is an error (`2 days` without `until`, `before` or `after`). A trailing comma (`Apr 1,`, `Apr 1, 2 days before Apr 10,`) is an error. With a union INTERVAL `--next-change` still finds the first change of any part (`two shifts` at 2026-01-01 00:00 is `2026-04-08 00:00:00`).
-
-**V15** locale-sensitive month and weekday names (run in subprocesses with environment variables set before Python starts; skip if the requested locale is not installed):
-
-- Hungarian effective locale: `LANG=hu_HU.UTF-8`, unset `LC_TIME` and `LC_ALL`. `március 15 = x` parses; `Mar 15 = x` fails as an unknown word.
-- English effective locale: `LANG=en_US.UTF-8`, unset `LC_TIME` and `LC_ALL`. `Mar 15 = x` parses; `március 15 = x` fails as an unknown word.
-- Precedence: with `LANG=hu_HU.UTF-8` and `LC_TIME=en_US.UTF-8` (and `LC_ALL` unset), English month/weekday names are recognized and Hungarian names are rejected. With `LANG=en_US.UTF-8` and `LC_TIME=hu_HU.UTF-8`, Hungarian names are recognized and English names are rejected.
-- `LC_ALL` overrides both: with `LC_ALL=hu_HU.UTF-8`, `LANG=en_US.UTF-8`, and `LC_TIME=en_US.UTF-8`, Hungarian names are recognized and English names are rejected.
-- Repeat the effective-locale checks for full and abbreviated weekday names, month ranges, weekday ranges, comma lists, macro-expanded names, and macro names reserved by month/weekday vocabulary.
-- Locale setup occurs before lexing. Verify locale-aware matching is case-insensitive only to the extent provided by the chosen date/time facilities, and that non-ASCII characters such as `á` survive tokenization and matching.
-- Run a subprocess per locale so Python's process-global locale state cannot leak between tests. Never require an unavailable locale to be installed; report a skip for that locale.
 
 **V18** `--at` bare forms (`tz=Europe/Budapest`; the current time is a parameter of the resolving function, so tests never read the wall clock). Config `06:00-07:00 = x`:
 - `--at 2026-10-09` is `2026-10-09 00:00:00`: `x` is not active; `--at 2026-10-09` with `00:00-01:00 = y` shows `y`.
