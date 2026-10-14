@@ -361,12 +361,11 @@ A comma followed by a duration (`NUMBER unit`, e.g. `2 days`) never continues a 
 
 * Side forms: `ISODATE`, or `[YEAR] [MONTH] DOM`, each optionally followed by one `TIME`. No lists, ranges or weekdays. A `TZ` may end the whole span and applies to both sides.
 * Left side may be a lone DOM (`1 -- 5` means days 1 through 5 of every month, equivalent to `1-5`), or a concrete month and day; the year is optional (absent or `*` → recurring every year).
-* Right side may omit year and month: they are inherited from the left side (`2026 Apr 1 -- 20`, `Apr 1 -- Jun 15`, `2026 Apr 1 -- May 15`).
+* Right side may omit year and month: they are inherited from the left side (`2026 Apr 1 -- 20`, `Apr 1 -- Jun 15`, `2026 Apr 1 -- May 15`). Thus `2026 Apr 1 -- 20`, `2026 Apr 1-20` and `2026-04-01 -- 20` are equivalent.
 * If the right date is then before the left date: a right side with no month moves to the next month; a right side with no explicit year moves to the next year (so `Dec 20 -- Jan 10` and `2026 Dec 20 -- Jan 10` work).
 * Without times: whole days, **end date inclusive** → `[00:00 of first day, 00:00 after last day)`.
   With times: both sides must have one; `[start, end)`.
-* Recurring span in a year where an endpoint does not exist (`Feb 29`) → round the date to the latest existing date/time that is before the endpoint in that year  (ie. Febr 28), like Febr 29 would compressed in a virtual zero length instant between Febr 28 and Mar 1.
-* thus `2026 Apr 1 -- 20`, `2026 Apr 1-20` and `2026-04-01 -- 20` are equivalent.
+* Recurring span in a year where an endpoint's date does not exist (`Feb 29` in a non-leap year): that day has zero length, as if it were squeezed into the instant between the end of Feb 28 and the start of Mar 1 (Mar 1 00:00). A start there begins at that instant; an end there (end date inclusive) ends at that same instant; a time of day on such an endpoint makes no difference. Thus `Feb 29 -- Mar 1` is two days (Feb 29 and Mar 1) in a leap year and one day (Mar 1) in any other year; `Feb 20 -- Feb 29` runs up to and including Feb 29 in a leap year and up to and including Feb 28 otherwise; `Feb 29 -- Feb 29` is one day in a leap year and empty otherwise.
 
 ### 6.6 Complete grammar
 
@@ -620,6 +619,7 @@ at 2026-11-14 23:59:59 → ∅; at 2026-11-15 00:00:00 → `runup`; at 2026-12-2
 
 **V8** spans: `Apr 1 -- Jun 15 = spring` active at 2027-06-15 23:59:59, not at 2027-06-16 00:00:00. `Dec 20 -- Jan 10 = holidays`: active at 2027-01-05 12:00; next at 2026-10-09 12:00 → `2026-12-20 00:00:00`.
 `2026 Apr 1 -- 20 = x` active at 2026-04-20 12:00, not at 2026-04-21 00:00:00, not at 2027-04-10.
+Feb 29 endpoints: `Feb 29 -- Mar 1 = a` is active at 2028-02-29 12:00 and 2028-03-01 12:00 (two days) but in 2027 only at 2027-03-01 12:00, not at 2027-02-28 12:00 (one day); `Feb 20 -- Feb 29 = b` is active at 2028-02-29 12:00 and not at 2028-03-01 00:00:00, and in 2027 active at 2027-02-28 12:00 and not at 2027-03-01 00:00:00; `Feb 29 -- Feb 29 = c` is active at 2028-02-29 12:00 and at no instant of 2027. `--next-change` at 2027-01-01 00:00 for `Feb 29 -- Mar 1 = a` alone is `2027-03-01 00:00:00`, then `2027-03-02 00:00:00`.
 
 **V9** zones (`tz=UTC`): `*-12-* 08:00-09:00 Europe/Berlin = t` → active at 2026-12-01 07:30:00, not at 2026-12-01 06:59:59. `*-07-* 08:00-09:00 Europe/Berlin = t` → active at 2026-07-01 06:30:00. `08:00-09:00 UTC+0300 = t` → active at 2026-10-09 05:30:00. Bare alphabetic abbreviations such as `CEST` and `CST` as TZ tokens must error and ask for an IANA zone ID or numeric offset.
 
