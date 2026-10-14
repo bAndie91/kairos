@@ -19,7 +19,7 @@ Author reviewed them and stroke out no-go alternatives, and clarified in Review 
 | D1 | `*-*-01` with child `Fri` | Plain intersection: "the 1st of the month **when it is a Friday**". "First Friday of the month" is `1-7 Fri`. The wording in your example comment ("1st Friday of every month") does not match intersection semantics. (§7.2) | ~~Add a dedicated "n-th weekday" syntax~~ |
 | D2 | Rollover time range plus day selector on **one line** (`Fri 22:00-02:00`) | Day selectors pick the *starting* day; the range may spill into the next day (Fri 22:00 → Sat 02:00). When the same pieces are on **nested lines** (`Fri` / `  22:00-02:00`) the result is a pure set intersection (Fri 00:00–02:00 ∪ Fri 22:00–24:00). (§7.1) | ~~Always pure intersection~~ |
 | D3 | Commas | A comma continues the current list only if the next item is of the **same kind** as the item before the comma; otherwise it separates terms. So `Mon-Fri 08:00-12:00,13:00-17:00` is a cross product, and `Apr 1, Jun 15` is two days. (§6.4) | ~~Comma always separates terms~~ |
-| D4 | Command macros (`NAME := ! cmd`) vs. "intervals not covering the current time are skipped" | ~~Commands run eagerly, in file order, during the single parse pass. In the default mode, subtrees under a parent that is **not active at the evaluation time** are skipped (their commands do not run).~~ `--next-change` and `--check` never skip. (§5.4) | Lazy evaluation (run a command when its macro is first used) | do lazy eval |
+| D4 | Command macros (`NAME := ! cmd`) vs. "intervals not covering the current time are skipped" | Commands run **eagerly**, in file order, when the macro definition line is reached in the single parse pass (never lazily on first use). In the default mode, subtrees under a parent that is **not active at the evaluation time** are skipped (their commands do not run). `--next-change` and `--check` never skip. The command's environment carries `KAIROS_INTERVAL_*` / `KAIROS_STATE_*` of the definition line's **ancestors** only, and `KAIROS_MACRO_*` of the macros visible at that line. (§5.1, §5.4) | ~~Lazy evaluation (run a command when its macro is first used)~~ | author: no lazy evaluation; evaluate eagerly |
 | D5 | `Easter := ! ncal -e` | `ncal -e` prints a **locale-dependent, US-style** date (`04/05/26` on my test machine), which the INTERVAL grammar (ISO dates only) rejects. The example parses as a macro definition but would fail on use. Use a wrapper such as `! date -d "$(ncal -e)" +%F`. Also: a command's output is a snapshot, so a recurring date computed by a command is only valid for the year it was computed in (§5.5). | ~~Accept `MM/DD/YY` (rejected: locale-dependent, ambiguous)~~ | ignore what you `ncal` outputs. keep that `date` command in the examples. no introduce mm/dd/yy format. |
 | D6 | `40 days until Dec 24` | End is the **end of the whole anchor instance** (so Dec 24 itself is included, mirroring `--` whose end date is inclusive). Range = Nov 15 00:00 → Dec 25 00:00. (§9) | ~~End at the *start* of Dec 24~~ | "until Dec 24" means "up to and including Dec 24" |
 | D7 | `~` in a STATE whose parent has no STATE | ~~Parse error.~~ | Inherit from the nearest ancestor with a STATE | author: inherit; it is an error only when no ancestor has a STATE. (§4.4) |
@@ -30,7 +30,7 @@ Author reviewed them and stroke out no-go alternatives, and clarified in Review 
 | D12 | `--config PATH` that does not exist | Error (exit 2); the default file is created only when **no** config is specified and none is found. (§3.2) | ~~Create it at PATH~~ |
 | D13 | `--next-change` with nothing ahead | No arbitrary horizon; print nothing and exit 0 if no future change exists. (§10) | ~~A fixed horizon and exit 1~~ | Search candidate boundaries, then prove exhaustion using the finite Gregorian recurrence cycle after all finite exceptions and duration tails. Include the future recurrence rules of the active TZif zones; don't scan every second/date to eternity. |
 | D17 | Macro names | NAME is any text before the first `:=` (no `=`, not starting with `!`, at least one letter): spaces and punctuation are allowed (`Mary's birthday`), and a name may start with or contain another macro's name as long as the whole name differs. Longest name wins when expanding; only identical names clash (D8). (§4.1, §5.2, §5.3) | ~~Identifiers only (`[A-Za-z_][A-Za-z0-9_]*`)~~ | confirmed by the author |
-| D18 | Command macro failures | A command macro is not executed when it is defined, so a non-zero exit status is an error when the macro is *evaluated*, never at definition/parse time. In default mode and with `--next-change` that is when a line that is not skipped first uses it, so an unused macro never runs. **`--check` is the exception: it evaluates every command macro, used or not**, so a failing command is reported at its macro line. (§2, §5.1, §5.4, §11, V12) | ~~`--check` never runs an unused macro~~ | author: `--check` runs all command macros |
+| D18 | Command macro failures | A command macro runs when it is defined (D4), so a non-zero exit status is an error reported at the macro's line whether or not any line uses the macro, in every mode. The only exception is a command inside a subtree skipped in default mode: it does not run and cannot fail. (§2, §5.1, §5.4, §11, V12) | ~~Evaluation-time errors: an unused macro never runs; `--check` runs all macros~~ | author: eager evaluation |
 | D19 | Unions of relative expressions | `2 days before X, 3 days after Y` and `Apr 1, 2 days before X` are allowed: an INTERVAL is a comma-separated list of *parts*, each a plain term or a whole relative expression (`+`, `until`, `before`, `after`); the result is the union of the parts. The anchor of a relative expression is **one comma-free term** (a clause without a list, or a span), the same for all four operators: a comma ends the relative expression on either side of the operator, so an operator never shifts a term beyond a comma (`Mon,Fri + 2 days` is `Mon` plus `Fri + 2 days`; `2 days before Mon,Fri` is `2 days before Mon` plus `Fri`). A comma ends the relative expression even when no whitespace follows it: `2 days before Apr 10,20` and `2 days before Apr 10, 20` both mean Apr 8 plus the 20th of every month (`20` is a separate part, a day of month). A comma followed by `NUMBER unit` never continues a day/year list. (§6.4, §6.6, §9.2) | ~~A relative expression must be the whole INTERVAL; the anchor is a union of all following terms~~ | confirmed by the author |
 | D20 | `--at` forms | `--at` takes the same time zone tokens as an INTERVAL (§8.1): `YYYY-MM-DD H:MM[:SS] [TZ]`, a bare date `YYYY-MM-DD [TZ]` (that day, 00:00) and a bare time `H:MM[:SS] [TZ]` (today, or tomorrow with a warning when today's time passed more than 12 hours ago). Date and time are separated by whitespace; there is no `T` separator. (§2.3, V18) | ~~Full form only~~; ~~ISO `[ T]` separator and a bare numeric offset~~ | author: TZ names and offsets just like INTERVAL; `T` is not needed |
 
@@ -100,7 +100,7 @@ kairos [OPTIONS]
 | `-n`, `--next-change` | Print the next instant (after "now" or after DATETIME if `--at` is specified) at which the set of reported states changes, instead of the states. |
 | `--tz ZONE` | Default time zone (IANA name, or any form from §8.1). Used for intervals without an explicit zone and for printing. Default: `$TZ`, else the system zone. |
 | `--format FMT` | Output format of `--next-change`. A `strftime` string, or the keywords `iso` (ISO 8601 with offset) or `epoch` (Unix seconds). Default `%Y-%m-%d %H:%M:%S`. |
-| `--check` | Fully parse the config (no subtree skipping) and evaluate **every** command macro, whether or not a line uses it (D18); print nothing, exit 0 if valid. A command macro that fails is an error at its macro line. |
+| `--check` | Fully parse the config (no subtree skipping, so every command macro runs, D4); print nothing, exit 0 if valid. A command macro that fails is an error at its macro line. |
 | `--print-default-config` | Print the default config text to stdout and exit. |
 | `-V`, `--version`, `-h`, `--help` | As usual. |
 
@@ -217,14 +217,14 @@ NAME := ! COMMAND         shell command; its stdout is the value
 * STRING: other macros visible at that point are expanded in it (once, §5.2) and the result is the value.
   A STRING cannot start with a literal `!` (that always means COMMAND).
 * COMMAND: run with `${SHELL:-/bin/sh} -c COMMAND`, stdin from `/dev/null`, stderr passed through,
-  Multiline output collaptsed into 1 line by `s/\n/ /g`. Trailing newline is stripped. 
-  Exit status ≠ 0 → error, reported (with the macro's file and line) at the moment the command is evaluated, i.e. when a line first uses the macro, or for every macro under `--check` (§5.4, D18). A definition alone never runs anything, so it cannot fail.
+  Multiline output collaptsed into 1 line by `s/\n/ /g`. Trailing newline is stripped.
+  The command runs eagerly, when its definition line is reached (§5.4, D4), and its output is the macro's value from then on. Exit status ≠ 0 → error, reported with the macro's file and line (D18).
   Macros are **not** expanded in COMMAND text. Instead the environment contains:
   * everything inherited from the caller;
-  * `KAIROS_MACRO_<NAME>` for every macro visible at that point (their resolved values). NAME is used **as is**, without any transformation: the variable for `Mary's birthday` is named `KAIROS_MACRO_Mary's birthday`. Kairos does not check or special-case anything (not `=`, not `\0`): it hands the variable to the operating system / language runtime like any other. If that refuses a variable, Kairos prints a warning naming the macro to stderr, leaves that variable out and carries on running the command. The shell may well be unable to read such a variable (`$KAIROS_MACRO_Mary's birthday` is not valid shell); that is not Kairos's concern;
+  * `KAIROS_MACRO_<NAME>` for every macro visible at the definition line (their resolved values; earlier command macros have already run, so they have values too). NAME is used **as is**, without any transformation: the variable for `Mary's birthday` is named `KAIROS_MACRO_Mary's birthday`. Kairos does not check or special-case anything (not `=`, not `\0`): it hands the variable to the operating system / language runtime like any other. If that refuses a variable, Kairos prints a warning naming the macro to stderr, leaves that variable out and carries on running the command. The shell may well be unable to read such a variable (`$KAIROS_MACRO_Mary's birthday` is not valid shell); that is not Kairos's concern;
   * `KAIROS_NOW`: the evaluation instant (ISO 8601 with offset);
-  * for interval definitions: `KAIROS_INTERVAL_<LEVEL>` and `KAIROS_STATE_<LEVEL>` for each ancestor line and the line itself where the command-sourced macro is being resolved: LEVEL is the indentation level from 0.
-    * `KAIROS_INTERVAL_<LEVEL>`'s value is the ancestor's (or self) INTERVAL text after macro expansion, with a leading `! ` if negated.
+  * `KAIROS_INTERVAL_<LEVEL>` and `KAIROS_STATE_<LEVEL>` for each **ancestor** of the macro definition line, and only for those: LEVEL is the indentation level of the ancestor, from 0. The macro line itself is not included, and a macro at the root level has no ancestor, so none of these variables are set for it.
+    * `KAIROS_INTERVAL_<LEVEL>`'s value is the ancestor's INTERVAL text after macro expansion, with a leading `! ` if negated.
     * `KAIROS_STATE_<LEVEL>`'s value is the ancestor's STATE text (as reported in normal mode: ie. after `~` substitution, escape and `^@\s*` processing, may be empty).
 * Empty values are valid.
 
@@ -235,7 +235,7 @@ Before an INTERVAL (or macro STRING) is lexed, every occurrence of a visible mac
 * A name is matched literally and case-sensitively, including the inner spaces and punctuation exactly as written in its definition.
 * If several visible names match at the same position, the **longest** wins. So `Mary` and `Mary's birthday` can coexist, and `Mary's birthday` is not read as `Mary` followed by `'s birthday`.
 * Whole word: when the name starts with a *word character* (a letter, including unicode letters, a digit or `_`), the character before the match must not be a word character; when it ends with one, the character after the match must not be one. So `mary` is not replaced inside `annamary` or `mary_birthday`. Whitespace, punctuation, `-`, `,`, `/` and the start/end of the string are boundaries; a name that starts or ends with punctuation needs no boundary on that side.
-* Expansion is a **single pass**: replaced text is not rescanned. (Values are already fully expanded when defined.)
+* Expansion is a **single pass**: replaced text is not rescanned. (Values are already fully expanded when defined: a string macro that uses a command macro sees the command's output, since the command has already run, §5.4.)
 
 ### 5.3 Names and scope
 
@@ -248,18 +248,17 @@ Before an INTERVAL (or macro STRING) is lexed, every occurrence of a visible mac
 
 ### 5.4 When commands run (D4)
 
-Parsing is one pass over the file, top to bottom; each macro command runs when its macro name is being resolved (lazy).
-Defining a command macro does not run it, so a command failure (non-zero exit status) is an **evaluation-time** error, not a parse-time one (D18): it is raised when the command is evaluated, at the macro's line. Except under `--check`, that happens when the first line that uses the macro is evaluated, and only then: a command macro that is never used, or is used only in a skipped subtree (default mode), never runs and never fails. The value of a command that ran is kept; later uses do not run it again.
+Parsing is one pass over the file, top to bottom. A command macro runs **eagerly**: exactly once, when its definition line is reached, before any later line is read. Its value is then fixed, like the value of a string macro (§5.2); later lines that use the macro never run the command again, and a macro that no line uses runs all the same. The environment of the command is built from the position of the definition line (§5.1): `KAIROS_INTERVAL_<LEVEL>` / `KAIROS_STATE_<LEVEL>` describe only the ancestors of that line (none at the root level), and `KAIROS_MACRO_<NAME>` the macros visible there.
+
+A command failure (non-zero exit status) is an error reported at the macro's line (D18), whether or not a line uses the macro.
 
 * **Default mode** (print states): when the parser reaches a subtree whose parent's effective set does **not** contain the
-  evaluation instant, the subtree is *skipped*: macro commands inside it do not run, and lines that depend on a skipped
-  command macro are only structurally validated (indentation, line kind). All other lines are fully parsed and validated.
-* **`--next-change`**: never skips, so every command macro used by any line is evaluated (and a failing one is reported); a macro no line uses never runs.
-* **`--check`**: never skips and evaluates **every** command macro, including ones no line uses. An unused macro is evaluated with the context of its own position: `KAIROS_INTERVAL_<LEVEL>` / `KAIROS_STATE_<LEVEL>` describe the lines above it that enclose it (§5.1).
+  evaluation instant, the subtree is *skipped*: macro commands inside it do not run, and lines that use a command macro defined in a skipped subtree are only structurally validated (indentation, line kind). All other lines are fully parsed and validated.
+* **`--next-change`** and **`--check`**: never skip, so every command macro of the file runs.
 
 ### 5.5 Known limitation
 
-A command macro is a snapshot taken at evaluation time. Example: `ncal -e` yields only the *current* year's Easter, so
+A command macro is a snapshot taken when the macro is defined, i.e. while the config is parsed. Example: `ncal -e` yields only the *current* year's Easter, so
 `--next-change` run in December cannot know next year's Easter. Commands may read `KAIROS_NOW` to pick a year.
 
 ---
@@ -542,7 +541,7 @@ Output is formatted in the display zone with `--format`. During a DST fold the d
 Syntax and semantic errors, each reported with file and line:
 
 bad indentation / first line indented; macro with children; unknown word (every one of them is reported, with a `wrong locale?` hint where one applies);
-macro name reserved, already visible, empty, without a letter or starting with `!`; macro command failed (when evaluated, D18; under `--check` every command macro is evaluated); duplicate item kind in a clause;
+macro name reserved, already visible, empty, without a letter or starting with `!`; macro command failed (reported at the macro's line when it is defined, D18); duplicate item kind in a clause;
 mixed-kind range; time range with equal ends; numbers out of range; `*` outside `ISODATE`; 
 span with lists/ranges, missing time on one side, end before start with explicit year; `~` with no ancestor that has a STATE; empty INTERVAL;
 unknown IANA zone ID, invalid offset, or unsupported alphabetic timezone abbreviation; bad `--at`/option values.
@@ -626,7 +625,7 @@ at 2026-11-14 23:59:59 → ∅; at 2026-11-15 00:00:00 → `runup`; at 2026-12-2
 Q1 := Jan-Mar
 Q1 = first quarter
 ```
-at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names that start with another macro's name (D17): `Mary := Mon`, `Mary's birthday := Jun 1`, `Mary's birthday = party`, `Mary = m` → at 2026-06-01 10:00 (a Monday) `party`, `m`; at 2026-06-08 10:00 `m`. Whole-word rule: `mary := Mon` followed by `annamary = x` → error (unknown token `annamary`). Command macro: `A := Tue`, `D := ! echo "$KAIROS_MACRO_A"`, `D = x` → active on a Tuesday. Scope/pruning: a command macro inside `Jun,Jul,Aug = summer` runs under `--at` in July (and `KAIROS_INTERVAL_0` is `Jun,Jul,Aug`, `KAIROS_STATE_0` is `summer`), does not run under `--at` in October, runs in October with `--check`.
+at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names that start with another macro's name (D17): `Mary := Mon`, `Mary's birthday := Jun 1`, `Mary's birthday = party`, `Mary = m` → at 2026-06-01 10:00 (a Monday) `party`, `m`; at 2026-06-08 10:00 `m`. Whole-word rule: `mary := Mon` followed by `annamary = x` → error (unknown token `annamary`). Command macro: `A := Tue`, `D := ! echo "$KAIROS_MACRO_A"`, `D = x` → active on a Tuesday. Scope/pruning: a command macro inside `Jun,Jul,Aug = summer` runs under `--at` in July (and `KAIROS_INTERVAL_0` is `Jun,Jul,Aug`, `KAIROS_STATE_0` is `summer`), does not run under `--at` in October, runs in October with `--check` (and with `--next-change`). A command macro at the root level has no `KAIROS_INTERVAL_*` / `KAIROS_STATE_*` variables at all, and one at a deeper level never sees its own line there, only its ancestors' (`D := ! env` at level 1 under `Jun,Jul,Aug = summer` sees `KAIROS_INTERVAL_0` and `KAIROS_STATE_0`, not `..._1`). The command runs once, at its definition, even if no line uses the macro; a later use does not run it again.
 
 **V11** all-lines test: the complete example list from the brief (with the D5 wrapper for `Easter`) parses as one config under `--check`.
 
@@ -645,7 +644,7 @@ at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names 
   - `01:00-04:00 = crossing` spans `[2026-10-24 23:00:00, 2026-10-25 03:00:00)` UTC: active at 00:30:00, 01:30:00, and 02:30:00 UTC, inactive at 03:00:00 UTC.
   - `Mon-Fri 08:00-16:00 = work`: verify local wall-clock endpoints remain 08:00–16:00 and that UTC boundaries are one hour later than in summer after the fall-back.
 
-Command failures are evaluation-time errors (D18): `X := ! false` on its own is valid in default mode and with `--next-change` (exit 0: nothing uses `X`, so nothing runs); it is an error once a line uses `X`, and in default mode not if that line sits in a skipped subtree. `--check` runs every command macro, so `X := ! false` fails it (exit 2, reported at the macro's line) whether or not a line uses `X`.
+Command failures are errors at the macro's line (D18), whether or not a line uses the macro: `X := ! false` on its own exits 2 in default mode, with `--next-change` and with `--check`. The one exception is a command inside a subtree skipped in default mode (D4), which does not run and cannot fail; `--next-change` and `--check` never skip.
 
 Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` is `[08:00:00, 10:00:00)` (§9: the result starts at the instance start) and `2 hours until 08:00` is `[06:00:00, 08:00:00)` (§9: the result ends at the instance end, the instant `08:00:00`).
 
