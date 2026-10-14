@@ -12,17 +12,17 @@ active states will next change.
 ## 0. Review guide: decisions agent had to make
 
 Each item below is a decision agent took so the spec could be complete.
-Author reviewed them and stroke out no-go alternatives, and clarified in Review comment column.
+The author reviewed them, struck out the rejected alternatives and clarified in the Review comment column.
 
 | # | Topic | Decision taken (spec section) | Alternative | Review comment |
 |---|-------|-------------------------------|-------------|----------------|
-| D1 | `*-*-01` with child `Fri` | Plain intersection: "the 1st of the month **when it is a Friday**". "First Friday of the month" is `1-7 Fri`. The wording in your example comment ("1st Friday of every month") does not match intersection semantics. (§7.2) | ~~Add a dedicated "n-th weekday" syntax~~ |
+| D1 | `*-*-01` with child `Fri` | Plain intersection: "the 1st of the month **when it is a Friday**". "First Friday of the month" is `1-7 Fri`. The phrase "1st Friday of every month" does not match intersection semantics. (§7.2) | ~~Add a dedicated "n-th weekday" syntax~~ |
 | D2 | Rollover time range plus day selector on **one line** (`Fri 22:00-02:00`) | Day selectors pick the *starting* day; the range may spill into the next day (Fri 22:00 → Sat 02:00). When the same pieces are on **nested lines** (`Fri` / `  22:00-02:00`) the result is a pure set intersection (Fri 00:00–02:00 ∪ Fri 22:00–24:00). (§7.1) | ~~Always pure intersection~~ |
 | D3 | Commas | A comma continues the current list only if the next item is of the **same kind** as the item before the comma; otherwise it separates terms. So `Mon-Fri 08:00-12:00,13:00-17:00` is a cross product, and `Apr 1, Jun 15` is two days. (§6.4) | ~~Comma always separates terms~~ |
-| D4 | Command macros (`NAME := ! cmd`) vs. "intervals not covering the current time are skipped" | ~~Commands run eagerly, in file order, during the single parse pass. In the default mode, subtrees under a parent that is **not active at the evaluation time** are skipped (their commands do not run).~~ `--next-change` and `--check` never skip. (§5.4) | Lazy evaluation (run a command when its macro is first used) | do lazy eval |
-| D5 | `Easter := ! ncal -e` | `ncal -e` prints a **locale-dependent, US-style** date (`04/05/26` on my test machine), which the INTERVAL grammar (ISO dates only) rejects. The example parses as a macro definition but would fail on use. Use a wrapper such as `! date -d "$(ncal -e)" +%F`. Also: a command's output is a snapshot, so a recurring date computed by a command is only valid for the year it was computed in (§5.5). | ~~Accept `MM/DD/YY` (rejected: locale-dependent, ambiguous)~~ | ignore what you `ncal` outputs. keep that `date` command in the examples. no introduce mm/dd/yy format. |
+| D4 | Command macros (`NAME := ! cmd`) vs. "intervals not covering the current time are skipped" | Commands run **eagerly**, in file order, when the macro definition line is reached in the single parse pass (never lazily on first use). In the default mode, subtrees under a parent that is **not active at the evaluation time** are skipped (their commands do not run). `--next-change` and `--check` never skip. The command's environment carries `KAIROS_INTERVAL_*` / `KAIROS_STATE_*` of the definition line's **ancestors** only, and `KAIROS_MACRO_*` of the macros visible at that line. (§5.1, §5.4) | ~~Lazy evaluation (run a command when its macro is first used)~~ | author: no lazy evaluation; evaluate eagerly |
+| D5 | `Easter := ! ncal -e` | `ncal -e` prints a **locale-dependent, US-style** date (e.g. `04/05/26` in a US locale), which the INTERVAL grammar (ISO dates only) rejects. The example parses as a macro definition but would fail on use. Use a wrapper such as `! date -d "$(ncal -e)" +%F`. Also: a command's output is a snapshot, so a recurring date computed by a command is only valid for the year it was computed in (§5.5). | ~~Accept `MM/DD/YY` (rejected: locale-dependent, ambiguous)~~ | ignore what you `ncal` outputs. keep that `date` command in the examples. no introduce mm/dd/yy format. |
 | D6 | `40 days until Dec 24` | End is the **end of the whole anchor instance** (so Dec 24 itself is included, mirroring `--` whose end date is inclusive). Range = Nov 15 00:00 → Dec 25 00:00. (§9) | ~~End at the *start* of Dec 24~~ | "until Dec 24" means "up to and including Dec 24" |
-| D7 | `~` in a STATE whose parent has no STATE | ~~Parse error.~~ | Inherit from the nearest ancestor with a STATE | author: inherit; it is an error only when no ancestor has a STATE. (§4.4) |
+| D7 | `~` in a STATE whose parent has no STATE | Inherit from the nearest ancestor with a STATE; it is an error only when no ancestor has a STATE. (§4.4) | ~~Parse error.~~ | author: inherit |
 | D8 | Macro redefinition | Error if the name is already **visible** (same scope or an enclosing active scope). Sibling scopes may reuse a name. (§5.3) | ~~Error only in the very same scope (allow shadowing)~~ |
 | D9 | TZ abbreviations | Use IANA TZDB for zone rules and its supplied abbreviations for display; do not maintain a hand-written abbreviation-to-zone map. Since abbreviations are ambiguous and do not identify a unique zone, accept only IANA zone IDs, numeric UTC offsets, and explicit UTC/GMT/Z forms in §8.1. | ~~Hand-written representative-zone mapping~~ | Examples such as `CEST → Europe/Berlin` were illustrative only, not required mappings. |
 | D10 | Dependencies | stdlib (`datetime`, `zoneinfo`) + `python-dateutil` (`relativedelta`) + `tzlocal` (local zone discovery) + system `tzdata`. (§12) | ~~stdlib only (hand-rolled local-zone discovery)~~ |
@@ -30,9 +30,9 @@ Author reviewed them and stroke out no-go alternatives, and clarified in Review 
 | D12 | `--config PATH` that does not exist | Error (exit 2); the default file is created only when **no** config is specified and none is found. (§3.2) | ~~Create it at PATH~~ |
 | D13 | `--next-change` with nothing ahead | No arbitrary horizon; print nothing and exit 0 if no future change exists. (§10) | ~~A fixed horizon and exit 1~~ | Search candidate boundaries, then prove exhaustion using the finite Gregorian recurrence cycle after all finite exceptions and duration tails. Include the future recurrence rules of the active TZif zones; don't scan every second/date to eternity. |
 | D17 | Macro names | NAME is any text before the first `:=` (no `=`, not starting with `!`, at least one letter): spaces and punctuation are allowed (`Mary's birthday`), and a name may start with or contain another macro's name as long as the whole name differs. Longest name wins when expanding; only identical names clash (D8). (§4.1, §5.2, §5.3) | ~~Identifiers only (`[A-Za-z_][A-Za-z0-9_]*`)~~ | confirmed by the author |
-| D18 | Command macro failures | A command macro is not executed when it is defined, so a non-zero exit status is an error when the macro is *evaluated*, never at definition/parse time. In default mode and with `--next-change` that is when a line that is not skipped first uses it, so an unused macro never runs. **`--check` is the exception: it evaluates every command macro, used or not**, so a failing command is reported at its macro line. (§2, §5.1, §5.4, §11, V12) | ~~`--check` never runs an unused macro~~ | author: `--check` runs all command macros |
+| D18 | Command macro failures | A command macro runs when it is defined (D4), so a non-zero exit status is an error reported at the macro's line whether or not any line uses the macro, in every mode. The only exception is a command inside a subtree skipped in default mode: it does not run and cannot fail. (§2, §5.1, §5.4, §11, V12) | ~~Evaluation-time errors: an unused macro never runs; `--check` runs all macros~~ | author: eager evaluation |
 | D19 | Unions of relative expressions | `2 days before X, 3 days after Y` and `Apr 1, 2 days before X` are allowed: an INTERVAL is a comma-separated list of *parts*, each a plain term or a whole relative expression (`+`, `until`, `before`, `after`); the result is the union of the parts. The anchor of a relative expression is **one term** (a clause or a span). A comma ends the relative expression even when no whitespace follows it: `2 days before Apr 10,20` and `2 days before Apr 10, 20` both mean Apr 8 and Apr 20. A comma followed by `NUMBER unit` never continues a day/year list. (§6.4, §6.6, §9.2) | ~~A relative expression must be the whole INTERVAL; the anchor is a union of all following terms~~ | confirmed by the author |
-| D20 | `--at` forms | Besides the full `YYYY-MM-DD[ T]HH:MM[:SS][offset]`, `--at` accepts a bare date `YYYY-MM-DD` (that day, 00:00) and a bare time `HH:MM[:SS]` (today, or tomorrow with a warning when today's time passed more than 12 hours ago). (§2.3, V18) | ~~Full form only~~ | |
+| D20 | `--at` forms | `--at` takes the same time zone tokens as an INTERVAL (§8.1): `YYYY-MM-DD H:MM[:SS] [TZ]`, a bare date `YYYY-MM-DD [TZ]` (that day, 00:00) and a bare time `H:MM[:SS] [TZ]` (today, or tomorrow with a warning when today's time passed more than 12 hours ago). Date and time are separated by whitespace; there is no `T` separator. (§2.3, V18) | ~~Full form only~~; ~~ISO `[ T]` separator and a bare numeric offset~~ | author: TZ names and offsets just like INTERVAL; `T` is not an allowed separator |
 
 
 ---
@@ -44,8 +44,6 @@ at which the set of active states changes.
 
 Out of scope for v1: daemon/watch mode, notifications, running actions on change, config includes,
 calendars other than Gregorian, sub-second precision, sandboxing of macro commands.
-
-Document these OOS points.
 
 ---
 
@@ -66,6 +64,7 @@ kairoslib/
   defaults.py           default config text constant
   reader.py             logical lines, indentation tree, STATE processing
   macros.py             macro scope, expansion and command execution
+  names.py              locale-aware month/weekday names (LC_TIME), reserved-word check, wrong-locale hint
   timezones.py          zone resolution using IANA TZDB / zoneinfo
   lexer.py              INTERVAL tokenization
   parser.py             INTERVAL grammar and AST dataclasses
@@ -76,7 +75,6 @@ kairoslib/
 tests/
   helpers.py
   test_*.py
-  fixtures/
 Makefile
 SPEC.md  PLAN.md  README.md
 ```
@@ -96,11 +94,11 @@ kairos [OPTIONS]
 | Option | Meaning |
 |--------|---------|
 | `-c FILE`, `--config FILE` | Use FILE instead of the XDG lookup. `-` reads the config from stdin. |
-| `--at DATETIME` | Evaluate at DATETIME instead of now: `YYYY-MM-DD[ T]HH:MM[:SS][offset]`, a bare date `YYYY-MM-DD`, or a bare time `HH:MM[:SS]` (§2.3). Without an offset it is interpreted in the display zone. Sub-seconds are truncated. |
+| `--at DATETIME` | Evaluate at DATETIME instead of now: `YYYY-MM-DD H:MM[:SS] [TZ]`, a date `YYYY-MM-DD [TZ]`, or a time `H:MM[:SS] [TZ]` (§2.3). `TZ` is any zone form of §8.1, as in an INTERVAL; without it the display zone is used. |
 | `-n`, `--next-change` | Print the next instant (after "now" or after DATETIME if `--at` is specified) at which the set of reported states changes, instead of the states. |
 | `--tz ZONE` | Default time zone (IANA name, or any form from §8.1). Used for intervals without an explicit zone and for printing. Default: `$TZ`, else the system zone. |
 | `--format FMT` | Output format of `--next-change`. A `strftime` string, or the keywords `iso` (ISO 8601 with offset) or `epoch` (Unix seconds). Default `%Y-%m-%d %H:%M:%S`. |
-| `--check` | Fully parse the config (no subtree skipping) and evaluate **every** command macro, whether or not a line uses it (D18); print nothing, exit 0 if valid. A command macro that fails is an error at its macro line. |
+| `--check` | Fully parse the config (no subtree skipping, so every command macro runs, D4); print nothing, exit 0 if valid. A command macro that fails is an error at its macro line. |
 | `--print-default-config` | Print the default config text to stdout and exit. |
 | `-V`, `--version`, `-h`, `--help` | As usual. |
 
@@ -122,15 +120,15 @@ Error message format on stderr: `kairos: PATH:LINE: error: MESSAGE` (or `kairos:
 
 ### 2.3 `--at` forms
 
-`--at` takes one of three forms. A form without an offset is local time in the display zone; a nonexistent or ambiguous local time follows §7.1 (PEP 495). Sub-seconds are truncated.
+`--at` takes one of three forms. The optional `TZ` is one zone token of §8.1 (an IANA zone ID, `UTC`, `Z`, `UTC+2`, `UTC+0300`, …), exactly as in an INTERVAL; whitespace between the time (or date) and the `TZ` is optional (`12:00Z`, `12:00 Z`). A form without `TZ` is local time in the display zone; with a `TZ` it is local time in that zone. A nonexistent or ambiguous local time follows §7.1 (PEP 495). Date and time are separated by whitespace only (there is no `T` separator). Sub-seconds are truncated.
 
 | Form | Meaning |
 |------|---------|
-| `YYYY-MM-DD HH:MM[:SS][offset| TZ]` | that instant; `offset` and `TZ` are any form of TZ indicator which is accepted in INTERVAL |
-| `YYYY-MM-DD` | the start of that day, `YYYY-MM-DD 00:00:00` (no offset) |
-| `HH:MM[:SS][offset| TZ]` | a time of day: today's date, or tomorrow's under the rule below |
+| `YYYY-MM-DD H:MM[:SS] [TZ]` | that instant |
+| `YYYY-MM-DD [TZ]` | the start of that day, `YYYY-MM-DD 00:00:00` |
+| `H:MM[:SS] [TZ]` | a time of day: today's date, or tomorrow's under the rule below |
 
-**Bare time.** "Today" is the current date in the display zone. Let `c` be that date at the given time. If `c` lies **more than 12 hours** in the past, the time is taken on the **next** day instead, and a warning goes to stderr naming both the given time and the date used, e.g. `kairos: warning: --at 06:00 passed 14 hours ago; setting tomorrow, 2026-10-10 06:00:00`. Otherwise `c` stays today, whether it is later today or already passed up to 12 hours ago (exactly 12 hours counts as "not more than"). So at 20:00, `--at 06:00` means tomorrow 06:00 (with the warning), while at 15:00, `--at 14:00` stays today (no warning), and `--at 22:00` at 20:00 is today. Of the three forms only the bare time depends on the current time; with `--next-change` the resolved instant is the base like any other `--at`. See V18.
+**Bare time.** "Today" is the current date in the zone of the form (the `TZ` if given, else the display zone). Let `c` be that date at the given time. If `c` lies **more than 12 hours** in the past, the time is taken on the **next** day instead, and a warning goes to stderr naming both the given time and the date used, e.g. `kairos: warning: --at 06:00 passed 14 hours ago; setting tomorrow, 2026-10-10 06:00:00`. Otherwise `c` stays today, whether it is later today or already passed up to 12 hours ago (exactly 12 hours counts as "not more than"). So at 20:00, `--at 06:00` means tomorrow 06:00 (with the warning), while at 15:00, `--at 14:00` stays today (no warning), and `--at 22:00` at 20:00 is today. Of the three forms only the bare time depends on the current time; with `--next-change` the resolved instant is the base like any other `--at`. See V18.
 
 ---
 
@@ -156,7 +154,7 @@ using it. If `--config` names a file that does not exist: error, nothing created
 
 The default config has **no active lines** and consists of examples. It may open with a short `## ` header that says where the documentation is (`man kairos`, `kairos --check`, `kairos --print-default-config`). The complete command-line and configuration reference, including the macro-command security note (§12), lives in `man/kairos.1`; do not duplicate it in the default config.
 
-Every example config line is written as `# ` followed by the original line (indentation preserved after that single space). **Test requirement:** stripping the leading `# ` from example lines must yield a config that parses successfully. Explanatory prose inside the block goes in lines starting with `## `, which the test ignores. Include all examples from the brief, with `Easter` using the working wrapper from D5.
+Every example config line is written as `# ` followed by the original line (indentation preserved after that single space). **Test requirement:** stripping the leading `# ` from example lines must yield a config that parses successfully. Explanatory prose inside the block goes in lines starting with `## `, which the test ignores. Include examples that together cover every syntax feature of this specification (clauses, lists, ranges, spans, relative forms, zones, nesting, negation, `~` and `@`, string and command macros), with `Easter` using the working wrapper from D5.
 
 ---
 
@@ -217,14 +215,14 @@ NAME := ! COMMAND         shell command; its stdout is the value
 * STRING: other macros visible at that point are expanded in it (once, §5.2) and the result is the value.
   A STRING cannot start with a literal `!` (that always means COMMAND).
 * COMMAND: run with `${SHELL:-/bin/sh} -c COMMAND`, stdin from `/dev/null`, stderr passed through,
-  Multiline output collaptsed into 1 line by `s/\n/ /g`. Trailing newline is stripped. 
-  Exit status ≠ 0 → error, reported (with the macro's file and line) at the moment the command is evaluated, i.e. when a line first uses the macro, or for every macro under `--check` (§5.4, D18). A definition alone never runs anything, so it cannot fail.
+  Multiline output is collapsed into one line by `s/\n/ /g`. Trailing newline is stripped.
+  The command runs eagerly, when its definition line is reached (§5.4, D4), and its output is the macro's value from then on. Exit status ≠ 0 → error, reported with the macro's file and line (D18).
   Macros are **not** expanded in COMMAND text. Instead the environment contains:
   * everything inherited from the caller;
-  * `KAIROS_MACRO_<NAME>` for every macro visible at that point (their resolved values). NAME is used **as is**, without any transformation: the variable for `Mary's birthday` is named `KAIROS_MACRO_Mary's birthday`. Kairos does not check or special-case anything (not `=`, not `\0`): it hands the variable to the operating system / language runtime like any other. If that refuses a variable, Kairos prints a warning naming the macro to stderr, leaves that variable out and carries on running the command. The shell may well be unable to read such a variable (`$KAIROS_MACRO_Mary's birthday` is not valid shell); that is not Kairos's concern;
+  * `KAIROS_MACRO_<NAME>` for every macro visible at the definition line (their resolved values; earlier command macros have already run, so they have values too). NAME is used **as is**, without any transformation: the variable for `Mary's birthday` is named `KAIROS_MACRO_Mary's birthday`. Kairos does not check or special-case anything (not `=`, not `\0`): it hands the variable to the operating system / language runtime like any other. If that refuses a variable, Kairos prints a warning naming the macro to stderr, leaves that variable out and carries on running the command. The shell may well be unable to read such a variable (`$KAIROS_MACRO_Mary's birthday` is not valid shell); that is not Kairos's concern;
   * `KAIROS_NOW`: the evaluation instant (ISO 8601 with offset);
-  * for interval definitions: `KAIROS_INTERVAL_<LEVEL>` and `KAIROS_STATE_<LEVEL>` for each ancestor line and the line itself where the command-sourced macro is being resolved: LEVEL is the indentation level from 0.
-    * `KAIROS_INTERVAL_<LEVEL>`'s value is the ancestor's (or self) INTERVAL text after macro expansion, with a leading `! ` if negated.
+  * `KAIROS_INTERVAL_<LEVEL>` and `KAIROS_STATE_<LEVEL>` for each **ancestor** of the macro definition line, and only for those: LEVEL is the indentation level of the ancestor, from 0. The macro line itself is not included, and a macro at the root level has no ancestor, so none of these variables are set for it.
+    * `KAIROS_INTERVAL_<LEVEL>`'s value is the ancestor's INTERVAL text after macro expansion, with a leading `! ` if negated.
     * `KAIROS_STATE_<LEVEL>`'s value is the ancestor's STATE text (as reported in normal mode: ie. after `~` substitution, escape and `^@\s*` processing, may be empty).
 * Empty values are valid.
 
@@ -235,7 +233,7 @@ Before an INTERVAL (or macro STRING) is lexed, every occurrence of a visible mac
 * A name is matched literally and case-sensitively, including the inner spaces and punctuation exactly as written in its definition.
 * If several visible names match at the same position, the **longest** wins. So `Mary` and `Mary's birthday` can coexist, and `Mary's birthday` is not read as `Mary` followed by `'s birthday`.
 * Whole word: when the name starts with a *word character* (a letter, including unicode letters, a digit or `_`), the character before the match must not be a word character; when it ends with one, the character after the match must not be one. So `mary` is not replaced inside `annamary` or `mary_birthday`. Whitespace, punctuation, `-`, `,`, `/` and the start/end of the string are boundaries; a name that starts or ends with punctuation needs no boundary on that side.
-* Expansion is a **single pass**: replaced text is not rescanned. (Values are already fully expanded when defined.)
+* Expansion is a **single pass**: replaced text is not rescanned. (Values are already fully expanded when defined: a string macro that uses a command macro sees the command's output, since the command has already run, §5.4.)
 
 ### 5.3 Names and scope
 
@@ -248,18 +246,17 @@ Before an INTERVAL (or macro STRING) is lexed, every occurrence of a visible mac
 
 ### 5.4 When commands run (D4)
 
-Parsing is one pass over the file, top to bottom; each macro command runs when its macro name is being resolved (lazy).
-Defining a command macro does not run it, so a command failure (non-zero exit status) is an **evaluation-time** error, not a parse-time one (D18): it is raised when the command is evaluated, at the macro's line. Except under `--check`, that happens when the first line that uses the macro is evaluated, and only then: a command macro that is never used, or is used only in a skipped subtree (default mode), never runs and never fails. The value of a command that ran is kept; later uses do not run it again.
+Parsing is one pass over the file, top to bottom. A command macro runs **eagerly**: exactly once, when its definition line is reached, before any later line is read. Its value is then fixed, like the value of a string macro (§5.2); later lines that use the macro never run the command again, and a macro that no line uses runs all the same. The environment of the command is built from the position of the definition line (§5.1): `KAIROS_INTERVAL_<LEVEL>` / `KAIROS_STATE_<LEVEL>` describe only the ancestors of that line (none at the root level), and `KAIROS_MACRO_<NAME>` the macros visible there.
+
+A command failure (non-zero exit status) is an error reported at the macro's line (D18), whether or not a line uses the macro.
 
 * **Default mode** (print states): when the parser reaches a subtree whose parent's effective set does **not** contain the
-  evaluation instant, the subtree is *skipped*: macro commands inside it do not run, and lines that depend on a skipped
-  command macro are only structurally validated (indentation, line kind). All other lines are fully parsed and validated.
-* **`--next-change`**: never skips, so every command macro used by any line is evaluated (and a failing one is reported); a macro no line uses never runs.
-* **`--check`**: never skips and evaluates **every** command macro, including ones no line uses. An unused macro is evaluated with the context of its own position: `KAIROS_INTERVAL_<LEVEL>` / `KAIROS_STATE_<LEVEL>` describe the lines above it that enclose it (§5.1).
+  evaluation instant, the subtree is *skipped*: macro commands inside it do not run, and lines that use a command macro defined in a skipped subtree are only structurally validated (indentation, line kind). All other lines are fully parsed and validated.
+* **`--next-change`** and **`--check`**: never skip, so every command macro of the file runs.
 
 ### 5.5 Known limitation
 
-A command macro is a snapshot taken at evaluation time. Example: `ncal -e` yields only the *current* year's Easter, so
+A command macro is a snapshot taken when the macro is defined, i.e. while the config is parsed. Example: `ncal -e` yields only the *current* year's Easter, so
 `--next-change` run in December cannot know next year's Easter. Commands may read `KAIROS_NOW` to pick a year.
 
 ---
@@ -288,8 +285,8 @@ After macro expansion the text is tokenised, whitespace being insignificant exce
 | Token | Form |
 |-------|------|
 | `ISODATE` | `Y-m-D`, `Y` = 4 digits or `*`, `m` and `D` = 1–2 digits or `*`; no inner whitespace |
-| `TIME` | `HH:MM`, `HH:MM:SS` |
-| `HOUR`, `MINUTE` | digits immediately followed by `h` (`8h` = `8:*`, every minute of hour 8), or by `m` / `min` (`30m`, `30min` = `*:30`, minute 30 of every hour); no whitespace between digits and suffix |
+| `TIME` | `H:MM[:SS]`: hour `H` = 1–2 digits, `MM` and `SS` = 2 digits (`8:00` = `08:00`); the same form is used for `--at` (§2.3) |
+| `HOUR`, `MINUTE` | `HOUR`: digits immediately followed by `h` (`8h`), or digits, `:` and `*` (`8:*`) — the two spellings are the same token kind and mean the same, every minute of hour 8; `MINUTE`: digits immediately followed by `m` / `min` (`30m`, `30min` = minute 30 of every hour, `*:30`); no whitespace inside a token |
 | `NUMBER` | digits |
 | `--` `-` `+` `,` `*` | punctuation (`--` is a span operator, `-` a range operator) |
 | `TZ` | IANA zone IDs, numeric UTC offsets, and explicit UTC/GMT/Z forms of §8.1 |
@@ -301,7 +298,7 @@ Unknown word → error (`unknown word 'X' (undefined macro?)`).
 
 **All unknown words are reported.** The lexer does not stop at the first unknown word of an INTERVAL: it keeps tokenizing and reports **every** unknown word of the line, each as its own diagnostic with the file and line (in order of appearance). A line with unknown words is not parsed further (its tokens are incomplete), but every other line is still checked (§11), so one run lists all the unknown words of the whole config.
 
-**Wrong locale hint.** Month and weekday names depend on the effective `LC_TIME` locale (§11), so an unknown word is often a valid name in some other locale (`May` while the effective locale is Hungarian; `március` while it is English). For an unknown word the diagnostic therefore also says `wrong locale?` when the word is a month or weekday name (full or abbreviated, case-insensitive) in any other **installed** locale, and names the locale(s): `unknown word 'May' (undefined macro? wrong locale? "May" is in "en_US.UTF-8" locale)`. At most a few matching locales are listed (the first few in the system's listing order, then `…`). Only the locale module (§1.1) deals with this: it enumerates the installed locales (the platform's own list, e.g. the output of `locale -a`), tries each through the same locale-aware `datetime`/`calendar` facilities used for parsing, and restores the effective locale afterwards. Kairos reads no `LANG`/`LC_*` variable and keeps no name table for it. The search runs only when a word is unknown, never on the normal path; if the installed locales cannot be listed, the hint is simply omitted.
+**Wrong locale hint.** Month and weekday names depend on the effective `LC_TIME` locale (see *Locale-dependent calendar names* above), so an unknown word is often a valid name in some other locale (`May` while the effective locale is Hungarian; `március` while it is English). For an unknown word the diagnostic therefore also says `wrong locale?` when the word is a month or weekday name (full or abbreviated, case-insensitive) in any other **installed** locale, and names the locale(s): `unknown word 'May' (undefined macro? wrong locale? "May" is in "en_US.UTF-8" locale)`. At most a few matching locales are listed (the first few in the system's listing order, then `…`). Only the locale module (§1.1) deals with this: it enumerates the installed locales (the platform's own list, e.g. the output of `locale -a`), tries each through the same locale-aware `datetime`/`calendar` facilities used for parsing, and restores the effective locale afterwards. Kairos reads no `LANG`/`LC_*` variable and keeps no name table for it. The search runs only when a word is unknown, never on the normal path; if the installed locales cannot be listed, the hint is simply omitted.
 
 ### 6.2 Item kinds
 
@@ -311,16 +308,16 @@ Unknown word → error (`unknown word 'X' (undefined macro?)`).
 | `MONTH` | a full or abbreviated month name recognized by the effective `LC_TIME` locale's date/time facilities | wraps across the calendar year (the locale's December-to-February equivalent selects December, January, February) |
 | `DOM` | integer 1–31 (leading zero ok) | wraps (`28-3` = 28…31, 1…3) |
 | `WEEKDAY` | a full or abbreviated weekday name recognized by the effective `LC_TIME` locale's date/time facilities | wraps from the locale's last weekday to its first weekday |
-| `TIME` | `H:MM[:SS]` (`24:00` only as a range end) | wraps past midnight (`23:00-04:00`) |
-| `HOUR` | `Nh`, N = 0–23 (`8h` = `8:*`) | inclusive set of whole hours; wraps (`22h-2h` = 22, 23, 0, 1, 2) |
+| `TIME` | `H:MM[:SS]`, H = 0–23 with or without a leading zero (`24:00` only as a range end) | wraps past midnight (`23:00-04:00`) |
+| `HOUR` | `Nh` or `N:*`, N = 0–23 (`8h` and `8:*` are the same item: a `TIME` whose minutes are wildcarded) | inclusive set of whole hours; wraps (`22h-2h` = `22:*-2:*` = 22, 23, 0, 1, 2); the two spellings may be mixed in one range (`8h-12:*`) |
 | `MINUTE` | `Nm` or `Nmin`, N = 0–59 (`30m` = `*:30`) | inclusive set of minutes of every hour; wraps (`50m-10m`) |
 | `DATE` | `ISODATE` (wildcards allowed) | not allowed (use `--`, §6.5) |
 
 Numbers: < 100 is a DOM, ≥ 100 is a YEAR; 0 and 32–99 are errors. `2026-2028` is a year range.
-`HOUR` and `MINUTE` are separate kinds, so `Mon-Fri 8h-12h 30m` is a valid clause (minute 30 of hours 8 to 12 inclusive, i.e. 08:30, 09:30 … 12:30, each lasting one minute); a clause may combine `TIME`, `HOUR` and `MINUTE` items, which must all hold (§6.3). `HOUR`/`MINUTE` are not allowed in a span side (§6.5).
-A point `TIME` lasts one minute (`08:00` = `[08:00:00, 08:01:00)`), or exactly one second when written with seconds (`08:00:30` = `[08:00:30, 08:00:31)`).
+`TIME`, `HOUR` and `MINUTE` are separate kinds: a range may not mix them (`8h-12:00` is a mixed-kind range error), but the two spellings of one kind are interchangeable everywhere (`8h` = `8:*`). `Mon-Fri 8h-12h 30m` is a valid clause (minute 30 of hours 8 to 12 inclusive, i.e. 08:30, 09:30 … 12:30, each lasting one minute); a clause may combine `TIME`, `HOUR` and `MINUTE` items, which must all hold (§6.3). `HOUR`/`MINUTE` are not allowed in a span side (§6.5).
+A `TIME` that is not part of a range lasts one minute (`08:00` = `[08:00:00, 08:01:00)`), or exactly one second when written with seconds (`08:00:30` = `[08:00:30, 08:00:31)`).
 A numeric zone offset is a single token only when written without spaces (`UTC+2`); `UTC + 2 hours` is the zone `UTC` followed by the `+` of a relative interval (§9), while `UTC+2 hours` is an error (the unit `hours` has no number).
-Month and weekday names are case-insensitive and come from the effective `LC_TIME` locale (§11). A single dash needs no whitespace but may have it (`Mon - Fri`), except inside an `ISODATE`.
+Month and weekday names are case-insensitive and come from the effective `LC_TIME` locale (see *Locale-dependent calendar names* above). A single dash needs no whitespace but may have it (`Mon - Fri`), except inside an `ISODATE`.
 
 ### 6.3 Clause = conjunction
 
@@ -329,12 +326,12 @@ A *clause* is a whitespace-separated sequence of items, optionally ending with a
 
 * at most one item group per kind; `DATE` excludes `YEAR`/`MONTH`/`DOM` in the same clause;
 * at least one non-`TZ` item;
-* `*` is only valid inside an `ISODATE`;
-* a `DATE`/`DOM`/`MONTH` combination that can never exist is an error (`Feb 30`, `2026-02-29`, `*-04-31`) - but dont try to be smart here, offload this validation to the datetime library;
+* `*` is only valid inside an `ISODATE` and as the minutes of an `HOUR` item (`8:*`);
+* a `DATE`/`DOM`/`MONTH` combination that can never exist is an error (`Feb 30`, `2026-02-29`, `*-04-31`) (this validation is delegated to the datetime library, not hand-written);
   `Feb 29` and `*-*-31` are fine.
 
 A clause with no `TIME` item covers whole days. A clause with no day-level item (`YEAR`, `MONTH`, `DOM`, `WEEKDAY`, `DATE`)
-covers every day. A clause without month, only day, covers that day in every months. TIME without minutes covers the whole hour. And so on.
+covers every day. A clause without month, only day, covers that day in every month. An `HOUR` item (`8h`, `8:*`: a time with wildcarded minutes) covers every minute of that hour.
 
 ### 6.4 Lists and commas (D3)
 
@@ -349,7 +346,7 @@ otherwise the comma ends the current *term*, and the next item starts a new clau
 | `Mon-Fri 08:00-12:00,13:00-17:00` | one clause, two time ranges |
 | `Mon 08:00-09:00, Tue 10:00-11:00` | two terms |
 
-A list may not mix point times and time ranges. The union of all terms is the interval.
+A list may not mix single `TIME` atoms and time ranges. The union of all terms is the interval.
 
 A comma followed by a duration (`NUMBER unit`, e.g. `2 days`) never continues a list: `2` there is the count of a duration, not a day of month. It starts a new *part* of the INTERVAL, a relative expression (§6.6, §9.2): `Apr 1, 2 days before X` is the two parts `Apr 1` and `2 days before X`, never the day list `1,2`. Whitespace before or after a comma is insignificant: `10,20` equals `10, 20`, and `Jun 1,Jul 2` equals `Jun 1, Jul 2`.
 
@@ -359,22 +356,22 @@ A comma followed by a duration (`NUMBER unit`, e.g. `2 days`) never continues a 
 
 * Side forms: `ISODATE`, or `[YEAR] [MONTH] DOM`, each optionally followed by one `TIME`. No lists, ranges or weekdays. A `TZ` may end the whole span and applies to both sides.
 * Left side may be a lone DOM (`1 -- 5` means days 1 through 5 of every month, equivalent to `1-5`), or a concrete month and day; the year is optional (absent or `*` → recurring every year).
-* Right side may omit year and month: they are inherited from the left side (`2026 Apr 1 -- 20`, `Apr 1 -- Jun 15`, `2026 Apr 1 -- May 15`).
+* Right side may omit year and month: they are inherited from the left side (`2026 Apr 1 -- 20`, `Apr 1 -- Jun 15`, `2026 Apr 1 -- May 15`). Thus `2026 Apr 1 -- 20`, `2026 Apr 1-20` and `2026-04-01 -- 20` are equivalent.
 * If the right date is then before the left date: a right side with no month moves to the next month; a right side with no explicit year moves to the next year (so `Dec 20 -- Jan 10` and `2026 Dec 20 -- Jan 10` work).
 * Without times: whole days, **end date inclusive** → `[00:00 of first day, 00:00 after last day)`.
   With times: both sides must have one; `[start, end)`.
-* Recurring span in a year where an endpoint does not exist (`Feb 29`) → round the date to the latest existing date/time that is before the endpoint in that year  (ie. Febr 28), like Febr 29 would compressed in a virtual zero length instant between Febr 28 and Mar 1.
-* thus `2026 Apr 1 -- 20`, `2026 Apr 1-20` and `2026-04-01 -- 20` are equivalent.
+* A date that does not exist in a given year (`Feb 29` in a non-leap year) is not a day of the span and contributes no day: the span covers exactly those of its days that exist. So `Feb 29 -- Mar 1` is two days (Feb 29, Mar 1) in a leap year and one day (Mar 1) in a non-leap year; `Feb 20 -- Feb 29` ends on Feb 29 in a leap year and on Feb 28 otherwise; `Feb 29 -- Feb 29` is Feb 29 in a leap year and empty otherwise. As instants: a nonexistent endpoint, whether the start or the (exclusive) end, is the boundary between Feb 28 and Mar 1, i.e. Mar 1 00:00 in the span's zone; a `TIME` written on such a side is ignored.
 
 ### 6.6 Complete grammar
 
 ```
 interval = part { "," part } ;           (* union of the parts, §9.2; comma grouping per §6.4 *)
 part     = term
-         | term "+" duration              (* §9 *)
-         | duration "until" term
-         | duration "before" term        (* §9.1 *)
-         | duration "after" term ;       (* §9.1 *)
+         | anchor "+" duration            (* §9 *)
+         | duration "until" anchor
+         | duration "before" anchor      (* §9.1 *)
+         | duration "after" anchor ;     (* §9.1 *)
+anchor   = span | clause ;
 term     = span | clause ;
 span     = dateside "--" dateside [ TZ ] ;
 dateside = ( ISODATE | [ YEAR ] [ MONTH ] DOM ) [ TIME ] ;
@@ -395,8 +392,8 @@ unit     = second | minute | hour | day | week | month | year ;   (* optional pl
   `08:00-16:00` is active at 08:00:00 and not at 16:00:00.
 * A clause is evaluated in its zone (§8): for every local calendar day that satisfies the day-level items, and every time range of the clause
   (default `00:00-24:00`), one range `[day+t1, day+t2)` is produced; if `t2 < t1` the end is on the following day (`t1 = t2` is an error). So the day selectors pick the  **starting** day (D2).
-* Missing time units are wildcards within their natural ranges. Thus bare `08:00` means the half-open interval `[08:00:00, 08:01:00)`, exactly the same as `08:00-08:01`; it is active at `08:00:59` and not at `08:01:00`. A bare time point used as a relative-interval anchor is point-like: its instance start is `08:00:00`, not a one-minute-long anchor for purposes of `ANCHOR + DURATION`.
-* Without minutes, eg. `8h`, the whole hour is selected (`08:00-09:00`); without hours, eg. `30m`, `30min`, the whole minute is selected within eavery hour: `*:30`.
+* Missing time units are wildcards within their natural ranges. Thus bare `08:00` means the half-open interval `[08:00:00, 08:01:00)`, exactly the same as `08:00-08:01`; it is active at `08:00:59` and not at `08:01:00`.
+* A wildcard in a time selects every value of that field: `8h` (≡ `8:*`) selects the whole hour (`08:00-09:00`), and `30m` (≡ `*:30`) selects minute 30 of every hour (`00:30-00:31`, `01:30-01:31`, … one minute in each hour).
 * Wall-clock → instant conversion, DST gaps and folds follow PEP 495 as implemented by `zoneinfo`: a nonexistent local endpoint uses the offset before the transition; an ambiguous endpoint uses the first occurrence (`fold=0`). Resolve each endpoint independently, then form the half-open UTC interval; ranges that become empty are dropped. This means a spring-gap range `02:00-03:00` in `Europe/Budapest` on 2026-03-29 is empty, while the fall-fold range `02:00-03:00` on 2026-10-25 spans both occurrences of local 02:00 and ends at 03:00 standard time. See V14 for mandatory boundary tests. **No calendar or zone arithmetic is hand-written**: use `datetime`, `zoneinfo`, `dateutil.relativedelta`.
 * An interval spec denotes an infinite (possibly periodic) set; implementations evaluate it **per window** (§10) with this contract:
   `eval(spec, lo, hi)` returns exactly `spec ∩ [lo, hi)`.
@@ -422,7 +419,7 @@ At top level it is the complement of INTERVAL.
 ### 7.4 Reported states
 
 * The state *name* is the STATE after `~` substitution and escape processing.
-* A line is **reported** iff it has a STATE that does not start with `@` and the resolved *name* is not empty.
+* A line is **reported** iff it has a STATE (the line has an `= STATE` portion; a line without one has an empty name and is never reported) and that STATE does not start with `@`.
 * Several lines may yield the same name; the state is active when **any** of them is effective (`U(name)` = union of their effective sets).
 * Output order: the order in which a name's first line appears in the file (depth-first, as written). 
 * State at instant `t`: `{ name : t ∈ U(name) }`.
@@ -538,7 +535,7 @@ Output is formatted in the display zone with `--format`. During a DST fold the d
 Syntax and semantic errors, each reported with file and line:
 
 bad indentation / first line indented; macro with children; unknown word (every one of them is reported, with a `wrong locale?` hint where one applies);
-macro name reserved, already visible, empty, without a letter or starting with `!`; macro command failed (when evaluated, D18; under `--check` every command macro is evaluated); duplicate item kind in a clause;
+macro name reserved, already visible, empty, without a letter or starting with `!`; macro command failed (reported at the macro's line when it is defined, D18); duplicate item kind in a clause;
 mixed-kind range; time range with equal ends; numbers out of range; `*` outside `ISODATE`; 
 span with lists/ranges, missing time on one side, end before start with explicit year; `~` with no ancestor that has a STATE; empty INTERVAL;
 unknown IANA zone ID, invalid offset, or unsupported alphabetic timezone abbreviation; bad `--at`/option values.
@@ -622,9 +619,9 @@ at 2026-11-14 23:59:59 → ∅; at 2026-11-15 00:00:00 → `runup`; at 2026-12-2
 Q1 := Jan-Mar
 Q1 = first quarter
 ```
-at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names that start with another macro's name (D17): `Mary := Mon`, `Mary's birthday := Jun 1`, `Mary's birthday = party`, `Mary = m` → at 2026-06-01 10:00 (a Monday) `party`, `m`; at 2026-06-08 10:00 `m`. Whole-word rule: `mary := Mon` followed by `annamary = x` → error (unknown token `annamary`). Command macro: `A := Tue`, `D := ! echo "$KAIROS_MACRO_A"`, `D = x` → active on a Tuesday. Scope/pruning: a command macro inside `Jun,Jul,Aug = summer` runs under `--at` in July (and `KAIROS_INTERVAL_0` is `Jun,Jul,Aug`, `KAIROS_STATE_0` is `summer`), does not run under `--at` in October, runs in October with `--check`.
+at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names that start with another macro's name (D17): `Mary := Mon`, `Mary's birthday := Jun 1`, `Mary's birthday = party`, `Mary = m` → at 2026-06-01 10:00 (a Monday) `party`, `m`; at 2026-06-08 10:00 `m`. Whole-word rule: `mary := Mon` followed by `annamary = x` → error (unknown token `annamary`). Command macro: `A := Tue`, `D := ! echo "$KAIROS_MACRO_A"`, `D = x` → active on a Tuesday. Scope/pruning: a command macro inside `Jun,Jul,Aug = summer` runs under `--at` in July (and `KAIROS_INTERVAL_0` is `Jun,Jul,Aug`, `KAIROS_STATE_0` is `summer`), does not run under `--at` in October, runs in October with `--check` (and with `--next-change`). A command macro at the root level has no `KAIROS_INTERVAL_*` / `KAIROS_STATE_*` variables at all, and one at a deeper level never sees its own line there, only its ancestors' (`D := ! env` at level 1 under `Jun,Jul,Aug = summer` sees `KAIROS_INTERVAL_0` and `KAIROS_STATE_0`, not `..._1`). The command runs once, at its definition, even if no line uses the macro; a later use does not run it again.
 
-**V11** all-lines test: the complete example list from the brief (with the D5 wrapper for `Easter`) parses as one config under `--check`.
+**V11** all-lines test: the default config of §3.3, with the leading `# ` of its example lines stripped (`Easter` using the D5 wrapper), parses as one config under `--check`.
 
 **V12** each of these is an error (exit 2, empty stdout): `08:00-25:00 = x`; `Mon Tue = x`; `Foo = x`; `Mon = ~` (top level); `  Mon = x` as the first line; `Mon := x`; `7 := x`; `Q := Jan` twice; `Feb 30 = x`; `2026-02-29 = x`; `Mon =`; `= x`; `X := ! false` followed by a line that uses `X` (`X = x`); `08:00-08:00 = x`; unknown zone `Mon Foo/Bar = x`.
 
@@ -641,9 +638,19 @@ at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names 
   - `01:00-04:00 = crossing` spans `[2026-10-24 23:00:00, 2026-10-25 03:00:00)` UTC: active at 00:30:00, 01:30:00, and 02:30:00 UTC, inactive at 03:00:00 UTC.
   - `Mon-Fri 08:00-16:00 = work`: verify local wall-clock endpoints remain 08:00–16:00 and that UTC boundaries are one hour later than in summer after the fall-back.
 
-Command failures are evaluation-time errors (D18): `X := ! false` on its own is valid in default mode and with `--next-change` (exit 0: nothing uses `X`, so nothing runs); it is an error once a line uses `X`, and in default mode not if that line sits in a skipped subtree. `--check` runs every command macro, so `X := ! false` fails it (exit 2, reported at the macro's line) whether or not a line uses `X`.
+Command failures are errors at the macro's line (D18), whether or not a line uses the macro: `X := ! false` on its own exits 2 in default mode, with `--next-change` and with `--check`. The one exception is a command inside a subtree skipped in default mode (D4), which does not run and cannot fail; `--next-change` and `--check` never skip.
 
-Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` is `[08:00:00, 10:00:00)` (§9: the result starts at the instance start).
+Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` is `[08:00:00, 10:00:00)` (§9: the result starts at the instance start) and `2 hours until 08:00` is `[06:00:00, 08:00:00)` (§9: the result ends at the instance end, the instant `08:00:00`).
+
+**V15** locale-sensitive month and weekday names (run in subprocesses with environment variables set before Python starts; skip if the requested locale is not installed):
+
+- Hungarian effective locale: `LANG=hu_HU.UTF-8`, unset `LC_TIME` and `LC_ALL`. `március 15 = x` parses; `Mar 15 = x` fails as an unknown word.
+- English effective locale: `LANG=en_US.UTF-8`, unset `LC_TIME` and `LC_ALL`. `Mar 15 = x` parses; `március 15 = x` fails as an unknown word.
+- Precedence: with `LANG=hu_HU.UTF-8` and `LC_TIME=en_US.UTF-8` (and `LC_ALL` unset), English month/weekday names are recognized and Hungarian names are rejected. With `LANG=en_US.UTF-8` and `LC_TIME=hu_HU.UTF-8`, Hungarian names are recognized and English names are rejected.
+- `LC_ALL` overrides both: with `LC_ALL=hu_HU.UTF-8`, `LANG=en_US.UTF-8`, and `LC_TIME=en_US.UTF-8`, Hungarian names are recognized and English names are rejected.
+- Repeat the effective-locale checks for full and abbreviated weekday names, month ranges, weekday ranges, comma lists, macro-expanded names, and macro names reserved by month/weekday vocabulary.
+- Locale setup occurs before lexing. Verify locale-aware matching is case-insensitive only to the extent provided by the chosen date/time facilities, and that non-ASCII characters such as `á` survive tokenization and matching.
+- Run a subprocess per locale so Python's process-global locale state cannot leak between tests. Never require an unavailable locale to be installed; report a skip for that locale.
 
 **V16** `before` / `after` (`tz=Europe/Budapest`, year 2026):
 ```
@@ -666,22 +673,14 @@ Apr 1, 2 days = oops
 ```
 `two shifts` is exactly Apr 8 and Oct 4 (active 2026-04-08 00:00:00, inactive 2026-04-09 00:00:00 and 2026-04-10 12:00); `day and shift` is exactly Apr 1 and Apr 8 (never the days 1 and 2); `week` is every Monday and Tuesday (`[Mon 00:00, Wed 00:00)`) plus every Friday; `separate parts` is exactly Apr 8 and Apr 20 (the shift applies to `Apr 10` only); `2 days before Apr 10,20` is also Apr 8 and Apr 20 because the comma ends the relative expression regardless of whitespace; the last line is an error (`2 days` without `until`, `before` or `after`). A trailing comma (`Apr 1,`, `Apr 1, 2 days before Apr 10,`) is an error. With a union INTERVAL `--next-change` still finds the first change of any part (`two shifts` at 2026-01-01 00:00 is `2026-04-08 00:00:00`).
 
-**V15** locale-sensitive month and weekday names (run in subprocesses with environment variables set before Python starts; skip if the requested locale is not installed):
-
-- Hungarian effective locale: `LANG=hu_HU.UTF-8`, unset `LC_TIME` and `LC_ALL`. `március 15 = x` parses; `Mar 15 = x` fails as an unknown word.
-- English effective locale: `LANG=en_US.UTF-8`, unset `LC_TIME` and `LC_ALL`. `Mar 15 = x` parses; `március 15 = x` fails as an unknown word.
-- Precedence: with `LANG=hu_HU.UTF-8` and `LC_TIME=en_US.UTF-8` (and `LC_ALL` unset), English month/weekday names are recognized and Hungarian names are rejected. With `LANG=en_US.UTF-8` and `LC_TIME=hu_HU.UTF-8`, Hungarian names are recognized and English names are rejected.
-- `LC_ALL` overrides both: with `LC_ALL=hu_HU.UTF-8`, `LANG=en_US.UTF-8`, and `LC_TIME=en_US.UTF-8`, Hungarian names are recognized and English names are rejected.
-- Repeat the effective-locale checks for full and abbreviated weekday names, month ranges, weekday ranges, comma lists, macro-expanded names, and macro names reserved by month/weekday vocabulary.
-- Locale setup occurs before lexing. Verify locale-aware matching is case-insensitive only to the extent provided by the chosen date/time facilities, and that non-ASCII characters such as `á` survive tokenization and matching.
-- Run a subprocess per locale so Python's process-global locale state cannot leak between tests. Never require an unavailable locale to be installed; report a skip for that locale.
-
-**V18** `--at` bare forms (`tz=Europe/Budapest`; the current time is a parameter of the resolving function, so tests never read the wall clock). Config `06:00-07:00 = x`:
-- `--at 2026-10-09` is `2026-10-09 00:00:00`: `x` is not active; `--at 2026-10-09` with `00:00-01:00 = y` shows `y`.
-- Now = `2026-10-09 20:00:00`: `--at 06:00` → `2026-10-10 06:00:00` (`x`, plus the stderr warning naming `06:00` and `2026-10-10`); `--at 08:00:01` → today `2026-10-09 08:00:01`, no warning (11 h 59 m 59 s ago); `--at 08:00` → today (exactly 12 hours ago is not "more than"), no warning; `--at 07:59:59` → tomorrow, with the warning; `--at 22:00` → today (later today), no warning.
+**V18** `--at` forms (`tz=Europe/Budapest`; the current time is a parameter of the resolving function, so tests never read the wall clock). Config `06:00-07:00 = x`:
+- `--at 2026-10-09` is `2026-10-09 00:00:00`: `x` is not active; `--at 2026-10-09` with `00:00-01:00 = y` shows `y`. `--at 2026-10-09Z` is `2026-10-09 00:00:00` UTC, i.e. `02:00:00` in Budapest, so `y` is not active but `00:00-03:00 = z` shows `z`.
+- A `TZ` is read as in an INTERVAL: `--at "2026-10-09 12:00 Europe/Berlin"` and `--at "2026-10-09 12:00:00UTC+2"` are both the instant `2026-10-09 10:00:00 UTC`; `--at "2026-10-09 12:00Z"` is `12:00:00 UTC`. `8:05` is the same as `08:05`.
+- Now = `2026-10-09 20:00:00` (= `18:00:00 UTC`): `--at 06:00` → `2026-10-10 06:00:00` (`x`, plus the stderr warning naming `06:00` and `2026-10-10`); `--at 08:00:01` → today `2026-10-09 08:00:01`, no warning (11 h 59 m 59 s ago); `--at 08:00` → today (exactly 12 hours ago is not "more than"), no warning; `--at 07:59:59` → tomorrow, with the warning; `--at 22:00` → today (later today), no warning.
+- Bare time with a `TZ` counts today and the 12 hours in that zone (now = `2026-10-09 20:00:00` Budapest = `18:00:00 UTC`): `--at 05:00Z` is 13 hours in the past in UTC → `2026-10-10 05:00:00 UTC` with the warning; `--at 06:00Z` is exactly 12 hours → `2026-10-09 06:00:00 UTC`, no warning.
 - Now = `2026-10-09 15:00:00`: `--at 14:00` → `2026-10-09 14:00:00`, no warning.
 - Now = `2026-10-09 01:06:00`: `--at 23:00` → today `2026-10-09 23:00:00` (still ahead), no warning.
-- Bare time with an offset (`06:00Z`) and a bare date with an offset (`2026-10-09Z`) are errors; so are `24:00`, `6:00x` and `HH:MM` out of range. With `--next-change`, `--at 06:00` (now 20:00 as above) searches from `2026-10-10 06:00:00`.
+- Errors: `24:00`, `25:00`, `6:60`, `6:00x` (unknown zone token), `2026-10-09 06:00 Foo/Bar` (unknown zone), `2026-10-09T06:00` and abbreviations such as `CEST` (§8.1). With `--next-change`, `--at 06:00` (now 20:00 as above) searches from `2026-10-10 06:00:00`.
 
 ---
 
