@@ -9,18 +9,18 @@ active states will next change.
 
 ---
 
-## 0. Review guide: decisions agent had to make
+## 0. Review guide: decisions the agent had to make
 
-Each item below is a decision agent took so the spec could be complete.
-Author reviewed them and stroke out no-go alternatives, and clarified in Review comment column.
+Each item below is a decision the agent took so the spec could be complete.
+The author reviewed them, struck out the rejected alternatives, and clarified in the Review comment column.
 
 | # | Topic | Decision taken (spec section) | Alternative | Review comment |
 |---|-------|-------------------------------|-------------|----------------|
-| D1 | `*-*-01` with child `Fri` | Plain intersection: "the 1st of the month **when it is a Friday**". "First Friday of the month" is `1-7 Fri`. The wording in your example comment ("1st Friday of every month") does not match intersection semantics. (§7.2) | ~~Add a dedicated "n-th weekday" syntax~~ |
+| D1 | `*-*-01` with child `Fri` | Plain intersection: "the 1st of the month **when it is a Friday**". "First Friday of the month" is `1-7 Fri`. The wording in the example comment ("1st Friday of every month") does not match intersection semantics. (§7.2) | ~~Add a dedicated "n-th weekday" syntax~~ |
 | D2 | Rollover time range plus day selector on **one line** (`Fri 22:00-02:00`) | Day selectors pick the *starting* day; the range may spill into the next day (Fri 22:00 → Sat 02:00). When the same pieces are on **nested lines** (`Fri` / `  22:00-02:00`) the result is a pure set intersection (Fri 00:00–02:00 ∪ Fri 22:00–24:00). (§7.1) | ~~Always pure intersection~~ |
 | D3 | Commas | A comma continues the current list only if the next item is of the **same kind** as the item before the comma; otherwise it separates terms. So `Mon-Fri 08:00-12:00,13:00-17:00` is a cross product, and `Apr 1, Jun 15` is two days. (§6.4) | ~~Comma always separates terms~~ |
 | D4 | Command macros (`NAME := ! cmd`) vs. "intervals not covering the current time are skipped" | Commands run eagerly: a command macro runs when the single parse pass reaches its definition line, in file order, whether or not any line uses it. In the default mode, subtrees under a parent that is **not active at the evaluation time** are skipped (their commands do not run). `--next-change` and `--check` never skip. (§5.4) | ~~Lazy evaluation (run a command when its macro is first used)~~ | author: no lazy evaluation; command macros are evaluated eagerly like string macros. (An earlier review comment said "do lazy eval".) |
-| D5 | `Easter := ! ncal -e` | `ncal -e` prints a **locale-dependent, US-style** date (`04/05/26` on my test machine), which the INTERVAL grammar (ISO dates only) rejects. The example parses as a macro definition but would fail on use. Use a wrapper such as `! date -d "$(ncal -e)" +%F`. Also: a command's output is a snapshot, so a recurring date computed by a command is only valid for the year it was computed in (§5.5). | ~~Accept `MM/DD/YY` (rejected: locale-dependent, ambiguous)~~ | ignore what you `ncal` outputs. keep that `date` command in the examples. no introduce mm/dd/yy format. |
+| D5 | `Easter := ! ncal -e` | `ncal -e` prints a **locale-dependent, US-style** date (e.g. `04/05/26`), which the INTERVAL grammar (ISO dates only) rejects. The example parses as a macro definition but would fail on use. Use a wrapper such as `! date -d "$(ncal -e)" +%F`. Also: a command's output is a snapshot, so a recurring date computed by a command is only valid for the year it was computed in (§5.5). | ~~Accept `MM/DD/YY` (rejected: locale-dependent, ambiguous)~~ | ignore what you `ncal` outputs. keep that `date` command in the examples. no introduce mm/dd/yy format. |
 | D6 | `40 days until Dec 24` | End is the **end of the whole anchor instance** (so Dec 24 itself is included, mirroring `--` whose end date is inclusive). Range = Nov 15 00:00 → Dec 25 00:00. (§9) | ~~End at the *start* of Dec 24~~ | "until Dec 24" means "up to and including Dec 24" |
 | D7 | `~` in a STATE whose parent has no STATE | Inherit from the nearest ancestor with a STATE; it is an error only when no ancestor has a STATE. (§4.4) | ~~Parse error~~ | author: inherit |
 | D8 | Macro redefinition | Error if the name is already **visible** (same scope or an enclosing active scope). Sibling scopes may reuse a name. (§5.3) | ~~Error only in the very same scope (allow shadowing)~~ |
@@ -44,8 +44,6 @@ at which the set of active states changes.
 
 Out of scope for v1: daemon/watch mode, notifications, running actions on change, config includes,
 calendars other than Gregorian, sub-second precision, sandboxing of macro commands.
-
-Document these OOS points.
 
 ---
 
@@ -218,7 +216,7 @@ NAME := ! COMMAND         shell command; its stdout is the value
 * STRING: other macros visible at that point are expanded in it (once, §5.2) and the result is the value.
   A STRING cannot start with a literal `!` (that always means COMMAND).
 * COMMAND: run with `${SHELL:-/bin/sh} -c COMMAND`, stdin from `/dev/null`, stderr passed through,
-  Multiline output collaptsed into 1 line by `s/\n/ /g`. Trailing newline is stripped. 
+  Multiline output is collapsed into one line by `s/\n/ /g`. Trailing newline is stripped. 
   Exit status ≠ 0 → error, reported with the macro's file and line when the command runs, i.e. at its definition (§5.4, D18), whether or not any line uses the macro.
   Macros are **not** expanded in COMMAND text. Instead the environment contains:
   * everything inherited from the caller;
@@ -328,11 +326,11 @@ A *clause* is a whitespace-separated sequence of items, optionally ending with a
 * at most one item group per kind; `DATE` excludes `YEAR`/`MONTH`/`DOM` in the same clause;
 * at least one non-`TZ` item;
 * `*` is only valid inside an `ISODATE`, or as the wildcarded minutes or hour of a time item (`8:*`, `*:30`);
-* a `DATE`/`DOM`/`MONTH` combination that can never exist is an error (`Feb 30`, `2026-02-29`, `*-04-31`) - but dont try to be smart here, offload this validation to the datetime library;
+* a `DATE`/`DOM`/`MONTH` combination that can never exist is an error (`Feb 30`, `2026-02-29`, `*-04-31`); this validation is offloaded to the datetime library;
   `Feb 29` and `*-*-31` are fine.
 
 A clause with no `TIME` item covers whole days. A clause with no day-level item (`YEAR`, `MONTH`, `DOM`, `WEEKDAY`, `DATE`)
-covers every day. A clause without month, only day, covers that day in every months. A time item with wildcarded minutes (`8:*`, also written `8h`) covers the whole hour; one with a wildcarded hour (`*:30`, also written `30m`) covers that minute of every hour. And so on.
+covers every day. A clause without month, only day, covers that day in every month. A time item with wildcarded minutes (`8:*`, also written `8h`) covers the whole hour; one with a wildcarded hour (`*:30`, also written `30m`) covers that minute of every hour. And so on.
 
 ### 6.4 Lists and commas (D3)
 
@@ -394,7 +392,7 @@ unit     = second | minute | hour | day | week | month | year ;   (* optional pl
 * Time is the real instant line, resolution one second. Every set is a union of **half-open** ranges `[start, end)`; adjacent ranges merge.
   `08:00-16:00` is active at 08:00:00 and not at 16:00:00.
 * A clause is evaluated in its zone (§8): for every local calendar day that satisfies the day-level items, and every time range of the clause
-  (default `00:00-24:00`), one range `[day+t1, day+t2)` is produced; if `t2 < t1` the end is on the following day (`t1 = t2` is an error). So the day selectors pick the  **starting** day (D2).
+  (default `00:00-24:00`), one range `[day+t1, day+t2)` is produced; if `t2 < t1` the end is on the following day (`t1 = t2` is an error). So the day selectors pick the **starting** day (D2).
 * Missing time units are wildcards within their natural ranges. Thus bare `08:00` means the half-open interval `[08:00:00, 08:01:00)`, exactly the same as `08:00-08:01`; it is active at `08:00:59` and not at `08:01:00`. Only the anchor of a relative expression is an instance (§9), and only for a bare time as the anchor of `+` or `until` is that instance an instant: `08:00:00`, where the start and the end coincide.
 * With wildcarded minutes, e.g. `8:*` or `8h`, the whole hour is selected (`08:00-09:00`); with a wildcarded hour, e.g. `*:30`, `30m` or `30min`, minute 30 of every hour is selected (`[H:30:00, H:31:00)` for every H).
 * Wall-clock → instant conversion, DST gaps and folds follow PEP 495 as implemented by `zoneinfo`: a nonexistent local endpoint uses the offset before the transition; an ambiguous endpoint uses the first occurrence (`fold=0`). Resolve each endpoint independently, then form the half-open UTC interval; ranges that become empty are dropped. This means a spring-gap range `02:00-03:00` in `Europe/Budapest` on 2026-03-29 is empty, while the fall-fold range `02:00-03:00` on 2026-10-25 spans both occurrences of local 02:00 and ends at 03:00 standard time. See V14 for mandatory boundary tests. **No calendar or zone arithmetic is hand-written**: use `datetime`, `zoneinfo`, `dateutil.relativedelta`.
