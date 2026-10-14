@@ -320,7 +320,7 @@ Unknown word → error (`unknown word 'X' (undefined macro?)`).
 
 Numbers: < 100 is a DOM, ≥ 100 is a YEAR; 0 and 32–99 are errors. `2026-2028` is a year range.
 `HOUR` and `MINUTE` are separate kinds, so `Mon-Fri 8h-12h 30m` is a valid clause (minute 30 of hours 8 to 12 inclusive, i.e. 08:30, 09:30 … 12:30, each lasting one minute); a clause may combine `TIME`, `HOUR` and `MINUTE` items, which must all hold (§6.3). The two spellings of an item are interchangeable and handled identically, in atoms, ranges and lists, and may be mixed: `Mon-Fri 8h-12h 30m`, `Mon-Fri 8:*-12:* *:30` and `Mon-Fri 8h-12:* 30min` are the same clause. `HOUR`/`MINUTE` items, in either spelling, are not allowed in a span side (§6.5).
-A point `TIME` lasts one minute (`08:00` = `[08:00:00, 08:01:00)`), or exactly one second when written with seconds (`08:00:30` = `[08:00:30, 08:00:31)`).
+A bare `TIME` (no range) is an interval like any other: `08:00` is the one-minute interval `[08:00:00, 08:01:00)`, the same set as `08:00-08:01`, and with seconds it is the one-second interval `08:00:30` = `[08:00:30, 08:00:31)`. Only as the anchor of `+` or `until` does a bare time act as an instant (§9).
 A numeric zone offset is a single token only when written without spaces (`UTC+2`); `UTC + 2 hours` is the zone `UTC` followed by the `+` of a relative interval (§9), while `UTC+2 hours` is an error (the unit `hours` has no number).
 Month and weekday names are case-insensitive and come from the effective `LC_TIME` locale (§11). A single dash needs no whitespace but may have it (`Mon - Fri`), except inside an `ISODATE`.
 
@@ -351,7 +351,7 @@ otherwise the comma ends the current *term*, and the next item starts a new clau
 | `Mon-Fri 08:00-12:00,13:00-17:00` | one clause, two time ranges |
 | `Mon 08:00-09:00, Tue 10:00-11:00` | two terms |
 
-A list may not mix point times and time ranges. The union of all terms is the interval.
+A list may not mix bare times and time ranges. The union of all terms is the interval.
 
 A comma followed by a duration (`NUMBER unit`, e.g. `2 days`) never continues a list: `2` there is the count of a duration, not a day of month. It starts a new *part* of the INTERVAL, a relative expression (§6.6, §9.2): `Apr 1, 2 days before X` is the two parts `Apr 1` and `2 days before X`, never the day list `1,2`. A comma also never continues a list into or inside the anchor of a relative operator (`+`, `until`, `before`, `after`): the anchor is one comma-free term (§9), so `Mon,Fri + 2 days` is the parts `Mon` and `Fri + 2 days`, and `2 days before Apr 10,20` is the parts `2 days before Apr 10` and `20`. Whitespace before or after a comma is insignificant: `10,20` equals `10, 20`, and `Jun 1,Jul 2` equals `Jun 1, Jul 2`.
 
@@ -400,7 +400,7 @@ unit     = second | minute | hour | day | week | month | year ;   (* optional pl
   `08:00-16:00` is active at 08:00:00 and not at 16:00:00.
 * A clause is evaluated in its zone (§8): for every local calendar day that satisfies the day-level items, and every time range of the clause
   (default `00:00-24:00`), one range `[day+t1, day+t2)` is produced; if `t2 < t1` the end is on the following day (`t1 = t2` is an error). So the day selectors pick the  **starting** day (D2).
-* Missing time units are wildcards within their natural ranges. Thus bare `08:00` means the half-open interval `[08:00:00, 08:01:00)`, exactly the same as `08:00-08:01`; it is active at `08:00:59` and not at `08:01:00`. A bare time point used as a relative-interval anchor is point-like: its instance start is `08:00:00`, not a one-minute-long anchor for purposes of `ANCHOR + DURATION`.
+* Missing time units are wildcards within their natural ranges. Thus bare `08:00` means the half-open interval `[08:00:00, 08:01:00)`, exactly the same as `08:00-08:01`; it is active at `08:00:59` and not at `08:01:00`. Only the anchor of a relative expression is an instance (§9), and only for a bare time as the anchor of `+` or `until` is that instance an instant: `08:00:00`, where the start and the end coincide.
 * With wildcarded minutes, e.g. `8:*` or `8h`, the whole hour is selected (`08:00-09:00`); with a wildcarded hour, e.g. `*:30`, `30m` or `30min`, minute 30 of every hour is selected (`[H:30:00, H:31:00)` for every H).
 * Wall-clock → instant conversion, DST gaps and folds follow PEP 495 as implemented by `zoneinfo`: a nonexistent local endpoint uses the offset before the transition; an ambiguous endpoint uses the first occurrence (`fold=0`). Resolve each endpoint independently, then form the half-open UTC interval; ranges that become empty are dropped. This means a spring-gap range `02:00-03:00` in `Europe/Budapest` on 2026-03-29 is empty, while the fall-fold range `02:00-03:00` on 2026-10-25 spans both occurrences of local 02:00 and ends at 03:00 standard time. See V14 for mandatory boundary tests. **No calendar or zone arithmetic is hand-written**: use `datetime`, `zoneinfo`, `dateutil.relativedelta`.
 * An interval spec denotes an infinite (possibly periodic) set; implementations evaluate it **per window** (§10) with this contract:
@@ -475,9 +475,9 @@ DURATION until ANCHOR        e.g.  40 days until Dec 24
 ```
 
 * DURATION = one or more `NUMBER unit` pairs (`5 days`, `4 days 9 hours`). Units: second, minute, hour, day, week, month, year (singular or plural, either regardless of the number).
-* An ANCHOR is **one term** (§6.3, §6.5): a clause without lists (`Mon`, `1-7 Mon`, `Mon-Wed`) or a span. A relative operator takes the single term next to it and never reaches beyond a comma, in either direction, whichever operator it is: `+` takes the term before it (back to the previous comma), `until`, `before` and `after` take the term after them (up to the next comma). A comma therefore always separates parts (§9.2), so `Apr 10, Apr 20 + 2 days` is `Apr 10` plus `Apr 20 + 2 days`, and `Mon,Fri + 2 days` is `Mon` plus `Fri + 2 days`. Its **instances** are the maximal contiguous ranges of the anchor's set (a point time is an instance of length zero).
+* An ANCHOR is **one term** (§6.3, §6.5): a clause without lists (`Mon`, `1-7 Mon`, `Mon-Wed`) or a span. A relative operator takes the single term next to it and never reaches beyond a comma, in either direction, whichever operator it is: `+` takes the term before it (back to the previous comma), `until`, `before` and `after` take the term after them (up to the next comma). A comma therefore always separates parts (§9.2), so `Apr 10, Apr 20 + 2 days` is `Apr 10` plus `Apr 20 + 2 days`, and `Mon,Fri + 2 days` is `Mon` plus `Fri + 2 days`. Its **instances** are the maximal contiguous ranges of the anchor's set, with one exception: for `+` and `until`, the instance of a bare time (`08:00`) is the instant `08:00:00`, with start = end, not the one-minute interval of §6.2.
 * `ANCHOR + D`: for every instance starting at `s`, the result is `[s, s + D)`. The anchor's own length is ignored. (`1-7 Mon + 5 day` = Mon 00:00 → Sat 00:00 → the working week starting on the first Monday.)
-* `D until ANCHOR`: for every instance ending at `e` the result is `[e − D, e)` (D6).
+* `D until ANCHOR`: for every instance ending at `e` the result is `[e − D, e)` (D6). (`2 hours until 08:00` = `[06:00, 08:00)`: the instance of a bare time ends where it starts.)
 * Arithmetic is done in the anchor's zone: day/week/month/year units are calendar (wall-clock) arithmetic (`dateutil.relativedelta`); hour/minute/second units are elapsed time (convert to UTC, add, convert back).
   In a pair list, calendar units are applied first, then elapsed units.
 * The result is an ordinary set: it may be negated, have children, carry a STATE.
@@ -492,7 +492,7 @@ DURATION after ANCHOR        e.g.  10 days after Oct 1
 
 * `D before ANCHOR` / `D after ANCHOR` is plain date/time arithmetic written out: every instance `[s, e)` of the anchor is moved **as a whole** to `[s − D, e − D)` (`before`) or `[s + D, e + D)` (`after`). The anchor's own length is kept, and its time of day is kept too.
   Thus `40 days before Dec 24` is Nov 14 (one day long, just like `Nov 14`), `10 days after Oct 1` is Oct 11, `2 days before Apr 10 12:00` is `Apr 8 12:00` (i.e. `[Apr 8 12:00, Apr 8 12:01)`), `3 hours after 08:00` is `11:00`, and `1 year before Dec 20 -- Jan 10` is the whole span moved back one year.
-* Unlike `+` and `until`, which build a run of length `D` from one end of the anchor, these forms select the shifted anchor itself. A bare point time keeps its one-minute length (§6.2); it is not reduced to a zero-length instance.
+* Unlike `+` and `until`, which build a run of length `D` from one end of the anchor, these forms select the shifted anchor itself. A bare time keeps its one-minute length here (§6.2): it is shifted as the interval `[08:00:00, 08:01:00)`, not reduced to the instant it is for `+` and `until`.
 * DURATION, units, ANCHOR, zone choice and calendar-vs-elapsed arithmetic are exactly as in §9; both endpoints of an instance are shifted independently (so a day-long instance stays one calendar day long across a DST change, and `1 month before Mar 31` ends at the clamped date given by `dateutil.relativedelta`).
 * The result is an ordinary set, so it is narrowed, negated, or given children like any other line: a child `08:00-09:00` under `2 days before Apr 10` selects 08:00–09:00 on Apr 8.
 * An instance whose shifted endpoints coincide or invert is dropped.
@@ -649,7 +649,7 @@ at 2026-02-10 → `first quarter`. Names with spaces and punctuation, and names 
 
 Command failures are evaluation-time errors (D18): `X := ! false` on its own is valid in default mode and with `--next-change` (exit 0: nothing uses `X`, so nothing runs); it is an error once a line uses `X`, and in default mode not if that line sits in a skipped subtree. `--check` runs every command macro, so `X := ! false` fails it (exit 2, reported at the macro's line) whether or not a line uses `X`.
 
-Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` is `[08:00:00, 10:00:00)` (§9: the result starts at the instance start).
+Also test a bare `08:00` as exactly `[08:00:00,08:01:00)`: active at 08:00:00 and 08:00:59, inactive at 08:01:00; as a relative anchor, `08:00 + 2 hours` is `[08:00:00, 10:00:00)` (§9: the result starts at the instance start) and `2 hours until 08:00` is `[06:00:00, 08:00:00)` (the instance of a bare time is the instant `08:00:00`).
 
 **V16** `before` / `after` (`tz=Europe/Budapest`, year 2026):
 ```
