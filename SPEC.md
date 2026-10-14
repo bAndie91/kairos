@@ -289,7 +289,7 @@ After macro expansion the text is tokenised, whitespace being insignificant exce
 |-------|------|
 | `ISODATE` | `Y-m-D`, `Y` = 4 digits or `*`, `m` and `D` = 1–2 digits or `*`; no inner whitespace |
 | `TIME` | `H:MM[:SS]`: hour `H` = 1–2 digits, `MM` and `SS` = 2 digits (`8:00` = `08:00`); the same form is used for `--at` (§2.3) |
-| `HOUR`, `MINUTE` | digits immediately followed by `h` (`8h` = `8:*`, every minute of hour 8), or by `m` / `min` (`30m`, `30min` = `*:30`, minute 30 of every hour); no whitespace between digits and suffix |
+| `HOUR`, `MINUTE` | `HOUR`: digits immediately followed by `h` (`8h`), or digits, `:` and `*` (`8:*`) — the two spellings are the same token kind and mean the same, every minute of hour 8; `MINUTE`: digits immediately followed by `m` / `min` (`30m`, `30min` = minute 30 of every hour, `*:30`); no whitespace inside a token |
 | `NUMBER` | digits |
 | `--` `-` `+` `,` `*` | punctuation (`--` is a span operator, `-` a range operator) |
 | `TZ` | IANA zone IDs, numeric UTC offsets, and explicit UTC/GMT/Z forms of §8.1 |
@@ -312,12 +312,12 @@ Unknown word → error (`unknown word 'X' (undefined macro?)`).
 | `DOM` | integer 1–31 (leading zero ok) | wraps (`28-3` = 28…31, 1…3) |
 | `WEEKDAY` | a full or abbreviated weekday name recognized by the effective `LC_TIME` locale's date/time facilities | wraps from the locale's last weekday to its first weekday |
 | `TIME` | `H:MM[:SS]`, H = 0–23 with or without a leading zero (`24:00` only as a range end) | wraps past midnight (`23:00-04:00`) |
-| `HOUR` | `Nh`, N = 0–23 (`8h` = `8:*`) | inclusive set of whole hours; wraps (`22h-2h` = 22, 23, 0, 1, 2) |
+| `HOUR` | `Nh` or `N:*`, N = 0–23 (`8h` and `8:*` are the same item: a `TIME` whose minutes are wildcarded) | inclusive set of whole hours; wraps (`22h-2h` = `22:*-2:*` = 22, 23, 0, 1, 2); the two spellings may be mixed in one range (`8h-12:*`) |
 | `MINUTE` | `Nm` or `Nmin`, N = 0–59 (`30m` = `*:30`) | inclusive set of minutes of every hour; wraps (`50m-10m`) |
 | `DATE` | `ISODATE` (wildcards allowed) | not allowed (use `--`, §6.5) |
 
 Numbers: < 100 is a DOM, ≥ 100 is a YEAR; 0 and 32–99 are errors. `2026-2028` is a year range.
-`HOUR` and `MINUTE` are separate kinds, so `Mon-Fri 8h-12h 30m` is a valid clause (minute 30 of hours 8 to 12 inclusive, i.e. 08:30, 09:30 … 12:30, each lasting one minute); a clause may combine `TIME`, `HOUR` and `MINUTE` items, which must all hold (§6.3). `HOUR`/`MINUTE` are not allowed in a span side (§6.5).
+`TIME`, `HOUR` and `MINUTE` are separate kinds: a range may not mix them (`8h-12:00` is a mixed-kind range error), but the two spellings of one kind are interchangeable everywhere (`8h` = `8:*`). `Mon-Fri 8h-12h 30m` is a valid clause (minute 30 of hours 8 to 12 inclusive, i.e. 08:30, 09:30 … 12:30, each lasting one minute); a clause may combine `TIME`, `HOUR` and `MINUTE` items, which must all hold (§6.3). `HOUR`/`MINUTE` are not allowed in a span side (§6.5).
 A point `TIME` lasts one minute (`08:00` = `[08:00:00, 08:01:00)`), or exactly one second when written with seconds (`08:00:30` = `[08:00:30, 08:00:31)`).
 A numeric zone offset is a single token only when written without spaces (`UTC+2`); `UTC + 2 hours` is the zone `UTC` followed by the `+` of a relative interval (§9), while `UTC+2 hours` is an error (the unit `hours` has no number).
 Month and weekday names are case-insensitive and come from the effective `LC_TIME` locale (§11). A single dash needs no whitespace but may have it (`Mon - Fri`), except inside an `ISODATE`.
@@ -329,12 +329,12 @@ A *clause* is a whitespace-separated sequence of items, optionally ending with a
 
 * at most one item group per kind; `DATE` excludes `YEAR`/`MONTH`/`DOM` in the same clause;
 * at least one non-`TZ` item;
-* `*` is only valid inside an `ISODATE`;
+* `*` is only valid inside an `ISODATE` and as the minutes of an `HOUR` item (`8:*`);
 * a `DATE`/`DOM`/`MONTH` combination that can never exist is an error (`Feb 30`, `2026-02-29`, `*-04-31`) - but dont try to be smart here, offload this validation to the datetime library;
   `Feb 29` and `*-*-31` are fine.
 
 A clause with no `TIME` item covers whole days. A clause with no day-level item (`YEAR`, `MONTH`, `DOM`, `WEEKDAY`, `DATE`)
-covers every day. A clause without month, only day, covers that day in every months. TIME without minutes covers the whole hour. And so on.
+covers every day. A clause without month, only day, covers that day in every months. An `HOUR` item (`8h`, `8:*`: a time with wildcarded minutes) covers every minute of that hour.
 
 ### 6.4 Lists and commas (D3)
 
@@ -399,7 +399,7 @@ unit     = second | minute | hour | day | week | month | year ;   (* optional pl
 * A clause is evaluated in its zone (§8): for every local calendar day that satisfies the day-level items, and every time range of the clause
   (default `00:00-24:00`), one range `[day+t1, day+t2)` is produced; if `t2 < t1` the end is on the following day (`t1 = t2` is an error). So the day selectors pick the  **starting** day (D2).
 * Missing time units are wildcards within their natural ranges. Thus bare `08:00` means the half-open interval `[08:00:00, 08:01:00)`, exactly the same as `08:00-08:01`; it is active at `08:00:59` and not at `08:01:00`. A bare time point used as a relative-interval anchor is point-like: its instance start is `08:00:00`, not a one-minute-long anchor for purposes of `ANCHOR + DURATION`.
-* Without minutes, eg. `8h`, the whole hour is selected (`08:00-09:00`); without hours, eg. `30m`, `30min`, the whole minute is selected within eavery hour: `*:30`.
+* A wildcard in a time selects every value of that field: `8h` (≡ `8:*`) selects the whole hour (`08:00-09:00`), and `30m` (≡ `*:30`) selects minute 30 of every hour (`00:30-00:31`, `01:30-01:31`, … one minute in each hour).
 * Wall-clock → instant conversion, DST gaps and folds follow PEP 495 as implemented by `zoneinfo`: a nonexistent local endpoint uses the offset before the transition; an ambiguous endpoint uses the first occurrence (`fold=0`). Resolve each endpoint independently, then form the half-open UTC interval; ranges that become empty are dropped. This means a spring-gap range `02:00-03:00` in `Europe/Budapest` on 2026-03-29 is empty, while the fall-fold range `02:00-03:00` on 2026-10-25 spans both occurrences of local 02:00 and ends at 03:00 standard time. See V14 for mandatory boundary tests. **No calendar or zone arithmetic is hand-written**: use `datetime`, `zoneinfo`, `dateutil.relativedelta`.
 * An interval spec denotes an infinite (possibly periodic) set; implementations evaluate it **per window** (§10) with this contract:
   `eval(spec, lo, hi)` returns exactly `spec ∩ [lo, hi)`.
