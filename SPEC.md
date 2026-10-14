@@ -76,7 +76,6 @@ kairoslib/
 tests/
   helpers.py
   test_*.py
-  fixtures/
 Makefile
 SPEC.md  PLAN.md  README.md
 ```
@@ -300,7 +299,7 @@ Unknown word → error (`unknown word 'X' (undefined macro?)`).
 
 **All unknown words are reported.** The lexer does not stop at the first unknown word of an INTERVAL: it keeps tokenizing and reports **every** unknown word of the line, each as its own diagnostic with the file and line (in order of appearance). A line with unknown words is not parsed further (its tokens are incomplete), but every other line is still checked (§11), so one run lists all the unknown words of the whole config.
 
-**Wrong locale hint.** Month and weekday names depend on the effective `LC_TIME` locale (§11), so an unknown word is often a valid name in some other locale (`May` while the effective locale is Hungarian; `március` while it is English). For an unknown word the diagnostic therefore also says `wrong locale?` when the word is a month or weekday name (full or abbreviated, case-insensitive) in any other **installed** locale, and names the locale(s): `unknown word 'May' (undefined macro? wrong locale? "May" is in "en_US.UTF-8" locale)`. At most a few matching locales are listed (the first few in the system's listing order, then `…`). Only the locale module (§1.1) deals with this: it enumerates the installed locales (the platform's own list, e.g. the output of `locale -a`), tries each through the same locale-aware `datetime`/`calendar` facilities used for parsing, and restores the effective locale afterwards. Kairos reads no `LANG`/`LC_*` variable and keeps no name table for it. The search runs only when a word is unknown, never on the normal path; if the installed locales cannot be listed, the hint is simply omitted.
+**Wrong locale hint.** Month and weekday names depend on the effective `LC_TIME` locale, so an unknown word is often a valid name in some other locale (`May` while the effective locale is Hungarian; `március` while it is English). For an unknown word the diagnostic therefore also says `wrong locale?` when the word is a month or weekday name (full or abbreviated, case-insensitive) in any other **installed** locale, and names the locale(s): `unknown word 'May' (undefined macro? wrong locale? "May" is in "en_US.UTF-8" locale)`. At most a few matching locales are listed (the first few in the system's listing order, then `…`). Only the code that owns the locale-aware name tables deals with this: it enumerates the installed locales (the platform's own list, e.g. the output of `locale -a`), tries each through the same locale-aware `datetime`/`calendar` facilities used for parsing, and restores the effective locale afterwards. Kairos reads no `LANG`/`LC_*` variable and keeps no name table for it. The search runs only when a word is unknown, never on the normal path; if the installed locales cannot be listed, the hint is simply omitted.
 
 ### 6.2 Item kinds
 
@@ -319,7 +318,7 @@ Numbers: < 100 is a DOM, ≥ 100 is a YEAR; 0 and 32–99 are errors. `2026-2028
 `HOUR` and `MINUTE` are separate kinds, so `Mon-Fri 8h-12h 30m` is a valid clause (minute 30 of hours 8 to 12 inclusive, i.e. 08:30, 09:30 … 12:30, each lasting one minute); a clause may combine `TIME`, `HOUR` and `MINUTE` items, which must all hold (§6.3). The two spellings of an item are interchangeable and handled identically, in atoms, ranges and lists, and may be mixed: `Mon-Fri 8h-12h 30m`, `Mon-Fri 8:*-12:* *:30` and `Mon-Fri 8h-12:* 30min` are the same clause. `HOUR`/`MINUTE` items, in either spelling, are not allowed in a span side (§6.5).
 A bare `TIME` (no range) is an interval like any other: `08:00` is the one-minute interval `[08:00:00, 08:01:00)`, the same set as `08:00-08:01`, and with seconds it is the one-second interval `08:00:30` = `[08:00:30, 08:00:31)`. Only as the anchor of `+` or `until` does a bare time act as an instant (§9).
 A numeric zone offset is a single token only when written without spaces (`UTC+2`); `UTC + 2 hours` is the zone `UTC` followed by the `+` of a relative interval (§9), while `UTC+2 hours` is an error (the unit `hours` has no number).
-Month and weekday names are case-insensitive and come from the effective `LC_TIME` locale (§11). A single dash needs no whitespace but may have it (`Mon - Fri`), except inside an `ISODATE`.
+Month and weekday names are case-insensitive and come from the effective `LC_TIME` locale. A single dash needs no whitespace but may have it (`Mon - Fri`), except inside an `ISODATE`.
 
 ### 6.3 Clause = conjunction
 
